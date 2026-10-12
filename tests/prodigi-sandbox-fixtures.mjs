@@ -164,3 +164,70 @@ export function recordingHttp(responses) {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox product read (GET /v4.0/products/GLOBAL-PHO-4X6).
+//
+// SYNTHETIC: the body below is shaped from the documented Product Details
+// schema and the owner-delegated validation selection (decision 0003 R1-R3). It
+// is NOT a recording of any Prodigi response, and its finishes, countries and
+// resolutions are placeholders chosen for the tests, not observations of the
+// real product.
+
+export const PRODUCT_READ_SKU = "GLOBAL-PHO-4X6";
+export const PRODUCT_READ_URL = "https://api.sandbox.prodigi.com/v4.0/products/GLOBAL-PHO-4X6";
+
+export const productReadDecision = Object.freeze({
+  decisionReference: "decision:fixture-delegated-selection",
+  sku: PRODUCT_READ_SKU,
+  destinationCountryCode: "US",
+  shippingMethod: "Standard"
+});
+
+export function productDetailsResponse(overrides = {}) {
+  return {
+    outcome: "Ok",
+    traceParent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+    product: {
+      sku: PRODUCT_READ_SKU,
+      description: "SYNTHETIC-DESCRIPTION-MUST-NOT-REACH-A-RECEIPT",
+      productDimensions: { width: 6, height: 4, units: "in" },
+      attributes: { finish: ["lustre", "gloss"] },
+      printAreas: { default: { required: true } },
+      variants: [
+        { attributes: { finish: "lustre" }, shipsTo: ["US", "GB"], printAreaSizes: { default: { horizontalResolution: 1800, verticalResolution: 1200 } } },
+        { attributes: { finish: "gloss" }, shipsTo: ["GB"], printAreaSizes: { default: { horizontalResolution: 1800, verticalResolution: 1200 } } }
+      ],
+      ...overrides
+    }
+  };
+}
+
+export const PRODUCT_READ_REFERENCES = Object.freeze({
+  ownerPermissionReference: "owner-permission:fixture-1",
+  accountTermsReference: "account-terms:fixture-1",
+  requestCostBudgetReference: "cost-budget:fixture-1",
+  receiptBinding: `sha256:${"a".repeat(64)}`
+});
+
+/**
+ * Test-only trusted host. Echoes the exact request with the verified flags, an
+ * expiry one hour out, and lets a case alter the answer or refuse. A real host
+ * must resolve each reference with its owning authority.
+ */
+export function fixtureGrantVerifier({ calls, answer, now = Date.now() } = {}) {
+  return {
+    async verify(request) {
+      if (calls) calls.push(request);
+      const grant = {
+        ...request,
+        ownerPermissionVerified: true,
+        accountTermsAccepted: true,
+        requestCostBudgetApproved: true,
+        singleUse: true,
+        expiresAt: new Date(now + 3_600_000).toISOString()
+      };
+      return answer === undefined ? grant : answer(grant);
+    }
+  };
+}

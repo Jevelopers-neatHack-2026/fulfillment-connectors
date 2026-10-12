@@ -10,6 +10,8 @@ Tracker: getticketstub.com #27 (Prodigi sandbox item) and [FC-02-SANDBOX](https:
 | --- | --- | --- |
 | `src/prodigi-secrets.ts` | `createEnvServerSecretSource`, `PRODIGI_SANDBOX_SECRET_BINDING`, `SecretResolverError` | Server-side secret-reference resolver that implements the existing `ServerSecretSource` port used by `withServerSecret` |
 | `src/prodigi-sandbox.ts` | `ProdigiSandboxClient`, `createProdigiQuotePort`, `mapQuoteRequest`, `mapOrderRequest`, `projectQuoteResponse`, `projectOrderResponse`, `toStatusResult`, `createFetchProdigiHttpPort`, `ProdigiSandboxError` | Prodigi v4 sandbox quote, order-create and order-read mapping |
+| `src/prodigi-sandbox.ts` | `ProdigiSandboxClient.getProductDetails`, `createProdigiProductReadFetchPort`, `createOneShotProdigiProductReadPort`, `projectProductReadObservation`, the `SandboxProductReadGrant*` types | The single owner-gated product read ([below](#sandbox-product-read-global-pho-4x6)) |
+| `scripts/prodigi-sandbox-product-read.mjs` | `runProductRead`, `validateProductReadReceipt`, `validateReceiptPath` | Zero-request preflight and the gated execution of that read |
 
 ## Secret references
 
@@ -70,15 +72,72 @@ Each failure is a `ProdigiSandboxError` with a fixed code and message, a `sideEf
 - 400 → `validation_failed`, 401 or 403 → `authentication_failed`, 404 → `not_found`, 429 → `rate_limited`. These are `not_dispatched`.
 - Other statuses → `provider_unavailable`. Transport errors → `provider_unavailable`, or `timeout` (default 30 s, maximum 60 s). Malformed bodies → `invalid_response`.
 - A failure after the request reached the HTTP port (including a response whose fields throw when read) is never reported as `credential_unavailable` or `not_dispatched`. For order creation it is `provider_unavailable` with `sideEffectState: "unknown"`: the order may or may not exist.
-- For order creation, every uncertain outcome is `sideEffectState: "unknown"` and must be reconciled with a read, not retried blindly. For quotes and reads it is `not_dispatched`.
+- For order creation, every uncertain outcome is `sideEffectState: "unknown"` and must be reconciled with a read, not retried blindly. For quotes and order reads it stays `not_dispatched`. That value is inaccurate once the request has left the port, and it is kept only so existing behavior does not change; a receipt must count requests itself and never infer the count from `sideEffectState`. The product read does not share this gap: after dispatch every failure, including 4xx, is `possible`.
 
 The fetch port allows only the sandbox origin and sets `redirect: "error"`. It rejects a declared `content-length` over 1 MiB and otherwise streams the body with a byte counter, cancelling it past 1 MiB. Non-2xx bodies are discarded unread.
+
+## Sandbox product read (GLOBAL-PHO-4X6)
+
+**Status: implemented and offline-tested only. The real request is `NOT_EXECUTED` and `NOT_AUTHORIZED`.** Nothing has been sent to Prodigi, no key has been read, and the missing owner-action authority below is a real blocker, not a formality.
+
+One authenticated `GET https://api.sandbox.prodigi.com/v4.0/products/GLOBAL-PHO-4X6` with `X-API-Key` and `Accept: application/json`, no body, to see what the sandbox says about the owner-delegated validation SKU (finish, US `shipsTo`, default print-area resolution). It is not a quote, an order or a catalog snapshot, and it is not run by tests or CI.
+
+### Route and policy
+
+`SandboxOperation` has a fourth member, `productDetails`, with the endpoint-table entry `GET /v4.0/products/{sku}`. `evaluateProviderPolicy` accepts it only for the fixed selection `GLOBAL-PHO-4X6` / `US` / `Standard` (`PRODIGI_SANDBOX_PRODUCT_READ_SELECTION`); any other SKU, destination or shipping method is blocked with `product_read_selection_not_allowed` before the verifier runs. The first read is itself the first test of account access, so for this operation the policy does not require `sandboxAccountAccessConfirmed` and nothing may present that attestation as proof.
+
+`ProdigiSandboxClient.getProductDetails(references, signal?)` has no SKU, URL or host parameter. The path is `prodigiProductDetailsPath(decision.sku)`, checked against `PRODIGI_SANDBOX_PRODUCT_READ_PATH`, and the decision must be the fixed selection (otherwise `decision_mismatch`). The decoded result is `decodeProdigiProductDetails(body, decision.sku)`, the existing strict decoder; no response shape is invented.
+
+### Gates, in order, before the key is read
+
+1. **One call per client.** The claim is taken synchronously before any `await` and never released: a second, concurrent or retried call fails with `request_budget_exhausted` before any gate, key read or port call.
+2. Reference shape (`ownerPermissionReference`, `accountTermsReference`, `requestCostBudgetReference`, `receiptBinding = sha256:<hex of the receipt path>`) and the fixed selection.
+3. `sandboxCallsEnabled === true`; the signal is not aborted.
+4. `evaluateProviderPolicy` returns `sandbox_call_permitted` for the exact route (the decision verifier attests the delegated tuple only).
+5. **Trusted owner-action grant.** The injected `productReadGrantVerifier` must return the exact request echoed back, with `ownerPermissionVerified`, `accountTermsAccepted`, `requestCostBudgetApproved` and `singleUse` all `true` and an unexpired `expiresAt`. No verifier, a throw, a missing or extra field, or a stale grant fails with `grant_unverified` / `not_dispatched`.
+6. `withServerSecret` resolves the sandbox key; the signal is checked once more; the one request is handed to the port.
+
+The grant interface is `SandboxProductReadGrantVerifier.verify(request)`. **This repository has no implementation of it and cannot have one:** it must be a trusted host that resolves each reference with its owning authority (the owner's permission, the account terms the owner actually accepted, the request-cost budget). A reference that merely exists is not authority; an operator-attested boolean is not a grant. `verify` must be free of external side effects, because the preflight and the client both call it.
+
+### Transport
+
+`createProdigiProductReadFetchPort` requests only the exact URL above with `redirect: "error"`, drops every non-2xx body unread and counts native bytes while streaming (cancelling past 1 MiB, before decoding). `createOneShotProdigiProductReadPort` wraps any port: it increments an attempt counter **synchronously before anything else**, refuses every second attempt and every request that is not exactly this URL, GET, the two expected header names and no body, and records what it actually forwarded (`attempts`, `dispatched`, `refused`, status, native bytes). Its snapshot is the request count of record, independent of how the client classifies a later invalid response.
+
+The client gives the read a hard 15 s deadline (a constructor `timeoutMs` is capped at 30 s) that also settles the call when a custom port ignores the `AbortSignal`; the port's promise always has a handler, so a late rejection is never unhandled, and the single timer is cleared on every path. A 2xx other than 200, a declared or counted size over 1 MiB, and a UTF-8 length over 1 MiB are refused before `JSON.parse`. There is no retry, no redirect, no fallback host, SKU or method.
+
+### Receipt
+
+`projectProductReadObservation` keeps only: SKU, SHA-256 of the canonical decoded DTO, product dimensions, attribute names, the values of the attribute named `finish`, variant count, variants shipping to `US`, print-area names, and the distinct `default` print-area resolutions. It drops the description and every other free-text field.
+
+`scripts/prodigi-sandbox-product-read.mjs` writes the receipt `prodigi-sandbox-product-read-receipt/1` to an absolute path **outside every git worktree**, created exclusively (`wx`, mode 0600) before the key is read or anything is sent. The path must be normalized, free of symlinks, not `.env`-adjacent and not yet existing; the file is re-checked after opening. It holds the references (opaque strings), the 40-hex source revision, the owner-packet digest, the request counts taken from the transport, the outcome (status, HTTP status, error code, `sideEffectState`, elapsed ms, native bytes), the observation above, and these fixed attestations: decision verifier `operator_attestation_only`, key presence `name_only_never_proof`, account access `NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ`, account terms `NOT_VERIFIED_BY_THIS_RECEIPT`, request cost `UNKNOWN` (never zero), and `authorityIssued`, `quoteAuthority`, `orderAuthority`, `bundleEligible`, `trimOrTierApproval`, `customerApproval` all `false`. It never holds the key, a header, the raw body, an account or customer identifier, or any URL except the fixed origin. A receipt is validated before it is written; a crash after the open leaves an `in_flight_dispatch_unknown` record, not a clean slate.
+
+### Command line
+
+```sh
+npm run build
+node scripts/prodigi-sandbox-product-read.mjs \
+  --decision-reference <ref> --owner-permission-reference <ref> \
+  --account-terms-reference <ref> --request-cost-budget-reference <ref> \
+  --source-revision <40 hex> --owner-packet-sha256 <64 hex> \
+  --receipt-path /absolute/path/outside/git/receipt.json
+```
+
+This default mode is a **zero-request preflight**. It needs no key and no environment, reads no `.env`, contacts nothing and creates nothing. It prints the fixed request plan and every gate as `satisfied`, `attested_only`, `unverified`, `missing`, `invalid` or `unavailable`, lists the `missingGates`, and exits 0 only when none are missing (otherwise 2). Its `authorizesExecution` is always `false`. The selection is compiled in; `--sku`, `--country`, `--shipping`, a URL, a host or a key option do not exist and are refused as unknown options.
+
+- **`decision_reference` is an operator attestation** of the owner-delegated decision (integration-evals 0003 R1-R3). It is the only attestation used, and it is not account proof, accepted terms or a cost approval.
+- The three owner-action references stay `unverified` until a trusted host verifies them. `--source-revision` must equal the clean checked-out HEAD (`dist/` is not compared).
+- `--execute --owner-approved` runs the same preflight and then the read, but only when a trusted host is supplied. **This command line supplies none**, so from it `--execute` always refuses with `trusted_host_grant_verifier` missing, zero requests, zero credential reads and no receipt. A host application that owns those authorities embeds `runProductRead(argv, { host })`, where `host.verifyProductReadGrant(request)` returns the grant described above.
+- **Key delivery.** The key is read only from `PRODIGI_SANDBOX_API_KEY`, only after every gate and after the receipt exists, through a one-name view of the environment. Export only that variable for the one process; never pass it in argv. `node --env-file` is refused (`no_whole_env_file_loading`) because it loads a whole `.env` before any gate.
+
+### What a successful read would prove
+
+Only that the decoder accepted one provider response for this exact SKU at that moment. It is not account proof beyond that one answer, not accepted terms, not a request-cost statement, not a quote, an order, an eligible production bundle, trim or customer-tier approval (R2's customer mapping stays open), and it does not make GLOBAL-PHO-4X6 the 4x2 diagnostic ticket.
 
 ## Tests
 
 `npm run test:prodigi-sandbox` (also part of `npm test`) runs `tests/prodigi-sandbox-suite.mjs` in a child process with a credential-free environment (only `PATH` and temp-directory variables). The suite never reads `process.env` for credentials: every resolver receives an injected env, and a test plants a sentinel `PRODIGI_SANDBOX_API_KEY` in `process.env` and asserts it never reaches a request.
 
-`tests/prodigi-sandbox-network-guard.mjs` is preloaded with `node --import`, before any `dist/` module loads. It makes `fetch`, `http`/`https` `request`/`get`, `net.connect`/`createConnection`, `net.Socket.prototype.connect` and `tls.connect` throw and counts each attempt. The runner pins the case IDs and fails if a case is missing, renamed or reordered. It reports the measured `externalProviderCalls` and fails unless that value is 0. This is an in-process guard, not OS-level network denial. The cases include 403, a pre-aborted signal, a throwing response getter, an oversized streamed body, and the smoke script refusing to run without `--owner-approved`. The fixtures in `tests/prodigi-sandbox-fixtures.mjs` are synthetic and shaped from the public reference (checked 2026-10-11). They are **not recordings** of sandbox traffic.
+`tests/prodigi-sandbox-network-guard.mjs` is preloaded with `node --import`, before any `dist/` module loads. It makes `fetch`, `http`/`https` `request`/`get`, `net.connect`/`createConnection`, `net.Socket.prototype.connect` and `tls.connect` throw and counts each attempt. The runner pins the case IDs and fails if a case is missing, renamed or reordered. It reports the measured `externalProviderCalls` and fails unless that value is 0. This is an in-process guard, not OS-level network denial. The cases include 403, a pre-aborted signal, a throwing response getter, an oversized streamed body, the smoke script refusing to run without `--owner-approved`, and the product read: the fixed route and every gate, the trusted grant, status and redirect handling without retry, oversize bodies refused before parsing, a port that ignores the abort signal, the one-shot transport, the command-line preflight (spawned with an empty environment) and receipt races. The product-read cases live in `tests/prodigi-sandbox-product-read-cases.mjs`; the in-process ones drive `runProductRead` with a fake trusted host, a fake `fetch` and an injected environment, so none can reach Prodigi. The fixtures in `tests/prodigi-sandbox-fixtures.mjs` are synthetic and shaped from the public reference (checked 2026-10-11). They are **not recordings** of sandbox traffic.
 
 ## Owner decision (2026-10-12)
 
@@ -93,6 +152,7 @@ This names the SKU, destination and shipping that items 1 and 3 below ask for. I
 
 ## Not done (needs owner approval)
 
+0. **The authenticated product read.** The route, the gates and the zero-request preflight are implemented ([above](#sandbox-product-read-global-pho-4x6)); the request itself is not executed. It still needs the explicit owner permission naming it, the actually accepted account terms, a per-request cost budget, a trusted host that verifies those references, a reviewed merged source revision and a receipt location outside git. This is the preferred first observation; it does not need a quote.
 1. **One authenticated sandbox quote or read.** This needs explicit owner approval. The SKU, destination and shipping method are named in the [owner decision](#owner-decision-2026-10-12): `GLOBAL-PHO-4X6`, `US`, `Standard`. The command makes exactly one request and never creates an order:
 
    ```sh

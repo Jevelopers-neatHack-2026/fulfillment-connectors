@@ -40,6 +40,7 @@ import {
   recordingHttp
 } from "./prodigi-sandbox-fixtures.mjs";
 import { catalogA, contractValidator, copyCatalog, quoteScope, selectionFor } from "./quote-fixtures.mjs";
+import { registerProductReadCases } from "./prodigi-sandbox-product-read-cases.mjs";
 
 const guard = globalThis[Symbol.for("fulfillment-connectors.prodigi-sandbox.network-guard")];
 if (guard?.installed !== true) throw new Error("the Prodigi sandbox network guard is not installed");
@@ -618,6 +619,9 @@ add("smoke.refuses-without-owner-approval", () => {
   assert.equal(child.stderr, "");
   assert.deepEqual(JSON.parse(child.stdout), { status: "refused", reason: "owner_approval_flag_required", externalProviderCalls: 0 });
 });
+
+// Sandbox product read: client route, transport guard and the owner-gated command line.
+registerProductReadCases(add);
 
 add("guard.blocks-fetch-http-https-net-and-tls", async () => {
   const before = guard.probeAttempts;

@@ -69,8 +69,12 @@ cases.push(["matrix records documentation separately from implementation and acc
   assert.deepEqual(prodigi.endpointAllowlist, [
     { operation: "quote", method: "POST", path: "/v4.0/quotes" },
     { operation: "submit", method: "POST", path: "/v4.0/Orders" },
-    { operation: "status", method: "GET", path: "/v4.0/orders/{prodigi_order_id}" }
+    { operation: "status", method: "GET", path: "/v4.0/orders/{prodigi_order_id}" },
+    { operation: "productDetails", method: "GET", path: "/v4.0/products/{sku}" }
   ]);
+  assert.equal(prodigi.operations.productDetails.implementation, "not_implemented");
+  assert.equal(prodigi.operations.productDetails.accountTested, false);
+  assert.equal(prodigi.operations.productDetails.details.includes("never been sent to Prodigi"), true);
 }]);
 
 cases.push(["omitted mode selects an offline simulated path without endpoint or credential access", async () => {
@@ -177,6 +181,44 @@ cases.push(["cancel and callback operations remain outside the selected sandbox 
     assert.equal(result.status, "blocked");
     assert.deepEqual(result.reasons, ["sandbox_operation_not_in_scope"]);
     assertNoEffects(result);
+  }
+  assert.equal(fixture.calls, 0);
+}]);
+
+cases.push(["the product read is in scope only for the fixed owner-delegated selection and needs no account-access attestation", async () => {
+  const selection = { operation: "productDetails", sku: "GLOBAL-PHO-4X6", destinationCountryCode: "US", shippingMethod: "Standard", decisionReference: "decision:fixture" };
+  // Account access is what this first read tests, so an attestation of it is not required...
+  const withoutAccount = successfulVerifier({ sandboxAccountAccessConfirmed: false });
+  const permitted = await evaluateProviderPolicy(sandboxInput({ ...selection, adapterId: PRODIGI_SANDBOX_ADAPTER_ID }), withoutAccount.verifier);
+  assert.equal(permitted.status, "sandbox_call_permitted");
+  assert.deepEqual(permitted.sandboxRoute, { method: "GET", path: "/v4.0/products/{sku}" });
+  assert.equal(permitted.networkRequests, 0);
+  assert.equal(permitted.credentialReads, 0);
+  // ...while the existing quote operation still requires it.
+  const quote = await evaluateProviderPolicy(sandboxInput({ ...selection, operation: "quote", adapterId: PRODIGI_SANDBOX_ADAPTER_ID }), withoutAccount.verifier);
+  assert.equal(quote.status, "blocked");
+  assert.deepEqual(quote.reasons, ["decision_does_not_match_request"]);
+  // ...but product approval is still required.
+  const unapproved = successfulVerifier({ productAndDestinationApproved: false });
+  const refused = await evaluateProviderPolicy(sandboxInput({ ...selection, adapterId: PRODIGI_SANDBOX_ADAPTER_ID }), unapproved.verifier);
+  assert.deepEqual(refused.reasons, ["decision_does_not_match_request"]);
+  // Any other SKU, destination or shipping method is refused before the verifier runs.
+  const fixture = successfulVerifier();
+  for (const override of [
+    { sku: "GLOBAL-PHO-6X8" }, { sku: "global-pho-4x6" }, { sku: "GLOBAL-PHO-4X6 " }, { sku: "../GLOBAL-PHO-4X6" },
+    { destinationCountryCode: "GB" }, { shippingMethod: "Express" }, { shippingMethod: "standard" }
+  ]) {
+    const result = await evaluateProviderPolicy(sandboxInput({ ...selection, ...override, adapterId: PRODIGI_SANDBOX_ADAPTER_ID }), fixture.verifier);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.reasons, ["product_read_selection_not_allowed"]);
+    assert.equal(result.providerCallPermitted, false);
+    assert.equal(result.sandboxRoute, null);
+  }
+  assert.equal(fixture.calls, 0);
+  // The production host and the live credential class stay refused for this operation too.
+  for (const override of [{ endpoint: "https://api.prodigi.com/v4.0" }, { credentialClass: "live" }]) {
+    const result = await evaluateProviderPolicy(sandboxInput({ ...selection, ...override }), fixture.verifier);
+    assert.equal(result.status, "blocked");
   }
   assert.equal(fixture.calls, 0);
 }]);
