@@ -135,7 +135,7 @@ export function registerProductReadCases(add) {
     assert.equal(observation.variantsShippingToUS, 1);
     assert.equal(observation.shipsToIncludesUS, true);
     assert.deepEqual(observation.printAreas, [{ name: "default", required: true }]);
-    assert.deepEqual(observation.defaultPrintAreaResolutions, [{ horizontal: 1800, vertical: 1200 }]);
+    assert.deepEqual(observation.defaultPrintAreaRecommendedPixelSizes, [{ horizontal: 1800, vertical: 1200 }]);
     assert.deepEqual(observation.productDimensions, { width: 6, height: 4, units: "in" });
     assert.match(observation.decodedSha256, /^[a-f0-9]{64}$/u);
     assert.equal(projectProductReadObservation(details).decodedSha256, observation.decodedSha256);
@@ -604,6 +604,16 @@ export function registerProductReadCases(add) {
     assert.equal(states.compiled_selection, "satisfied");
     assert.equal(states.no_whole_env_file_loading, "satisfied");
     assert.equal(states.trusted_host_grant_verifier, "unavailable");
+    // What the command line cannot establish is listed apart from the gates and never reads as verified.
+    assert.deepEqual(report.unverifiedAssertions.map((entry) => [entry.id, entry.state]), [
+      ["built_artifact_matches_source", "unverified"], ["compiled_tuple_verified_by_authority", "not_verified_operator_attestation_only"],
+      ["account_access", "not_asserted"], ["request_cost", "UNKNOWN"], ["customer_authority", "none"]
+    ]);
+    assert.equal(report.gates.some((entry) => entry.id.includes("built_artifact") || entry.id.includes("compiled_tuple")), false);
+    assert.equal(report.trustedHostInterface.method, "verifyProductReadGrant(request)");
+    assert.ok(report.trustedHostInterface.request.includes("ownerPermissionReference") && report.trustedHostInterface.request.includes("receiptBinding"));
+    assert.ok(report.trustedHostInterface.notAuthority.includes("an operator attestation boolean"));
+    assert.match(report.gates.find((entry) => entry.id === "source_revision_immutable").note, /./u);
     // A symlinked invocation path must still run and print its report, never exit 0 silently.
     await withTemp(async (directory) => {
       const link = path.join(directory, "linked-product-read.mjs");
@@ -846,10 +856,10 @@ export function registerProductReadCases(add) {
       assert.equal(parsed.decoded.sku, PRODUCT_READ_SKU);
       assert.deepEqual(parsed.decoded.finishAttributeValues, ["gloss", "lustre"]);
       assert.equal(parsed.decoded.shipsToIncludesUS, true);
-      assert.deepEqual(parsed.decoded.defaultPrintAreaResolutions, [{ horizontal: 1800, vertical: 1200 }]);
+      assert.deepEqual(parsed.decoded.defaultPrintAreaRecommendedPixelSizes, [{ horizontal: 1800, vertical: 1200 }]);
       assert.deepEqual(parsed.attestations, {
         decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-        accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+        accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
         bundleEligible: false, trimOrTierApproval: false, customerApproval: false
       });
       assert.equal(parsed.trustedHostGrant.verified, true);

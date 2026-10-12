@@ -1413,8 +1413,12 @@ export interface ProdigiProductReadObservation {
   readonly variantsShippingToUS: number;
   readonly shipsToIncludesUS: boolean;
   readonly printAreas: readonly { readonly name: string; readonly required: boolean }[];
-  /** Distinct resolutions of the `default` print area across the variants that declare one. */
-  readonly defaultPrintAreaResolutions: readonly { readonly horizontal: number; readonly vertical: number }[];
+  /**
+   * Distinct `horizontalResolution` x `verticalResolution` pairs of the `default` print area across the variants
+   * that declare one. The public reference documents these as RECOMMENDED pixel dimensions. They are not a required
+   * bleed, template or customer print specification, and they are an observation only after a real response.
+   */
+  readonly defaultPrintAreaRecommendedPixelSizes: readonly { readonly horizontal: number; readonly vertical: number }[];
 }
 
 function canonicalJson(value: unknown): string {
@@ -1449,7 +1453,7 @@ export function projectProductReadObservation(details: ProdigiProductDetails): P
     variantsShippingToUS: shippingToUS,
     shipsToIncludesUS: shippingToUS > 0,
     printAreas: Object.freeze(Object.keys(details.printAreas).sort().map((name) => Object.freeze({ name, required: details.printAreas[name]?.required === true }))),
-    defaultPrintAreaResolutions: Object.freeze([...resolutions.values()]
+    defaultPrintAreaRecommendedPixelSizes: Object.freeze([...resolutions.values()]
       .sort((a, b) => a.horizontal - b.horizontal || a.vertical - b.vertical).slice(0, 16).map((entry) => Object.freeze(entry)))
   });
 }

@@ -149,7 +149,7 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
   if (!sameKeys(grant, ["verified", "expiresAt"]) || typeof grant.verified !== "boolean" || (grant.expiresAt !== null && !ISO_PATTERN.test(grant.expiresAt ?? ""))) problems.push("trustedHostGrant");
   const expected = {
     decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-    accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+    accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
     bundleEligible: false, trimOrTierApproval: false, customerApproval: false
   };
   if (!sameKeys(receipt.attestations, Object.keys(expected)) || Object.entries(expected).some(([key, value]) => receipt.attestations[key] !== value)) problems.push("attestations");
@@ -162,7 +162,7 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
 }
 
 function validDecoded(decoded) {
-  if (!sameKeys(decoded, ["sku", "decodedSha256", "productDimensions", "attributeNames", "finishAttributeValues", "variantCount", "variantsShippingToUS", "shipsToIncludesUS", "printAreas", "defaultPrintAreaResolutions"])) return false;
+  if (!sameKeys(decoded, ["sku", "decodedSha256", "productDimensions", "attributeNames", "finishAttributeValues", "variantCount", "variantsShippingToUS", "shipsToIncludesUS", "printAreas", "defaultPrintAreaRecommendedPixelSizes"])) return false;
   const count = (n) => Number.isSafeInteger(n) && n >= 0 && n <= 1_000_000;
   const size = decoded.productDimensions;
   return decoded.sku === "GLOBAL-PHO-4X6" && SHA256_PATTERN.test(decoded.decodedSha256) &&
@@ -171,8 +171,8 @@ function validDecoded(decoded) {
     Array.isArray(decoded.finishAttributeValues) && decoded.finishAttributeValues.length <= 64 && decoded.finishAttributeValues.every((value) => VALUE_TOKEN.test(value)) &&
     count(decoded.variantCount) && count(decoded.variantsShippingToUS) && typeof decoded.shipsToIncludesUS === "boolean" &&
     Array.isArray(decoded.printAreas) && decoded.printAreas.length <= 64 && decoded.printAreas.every((area) => sameKeys(area, ["name", "required"]) && NAME_TOKEN.test(area.name) && typeof area.required === "boolean") &&
-    Array.isArray(decoded.defaultPrintAreaResolutions) && decoded.defaultPrintAreaResolutions.length <= 16 &&
-    decoded.defaultPrintAreaResolutions.every((entry) => sameKeys(entry, ["horizontal", "vertical"]) && Number.isFinite(entry.horizontal) && Number.isFinite(entry.vertical));
+    Array.isArray(decoded.defaultPrintAreaRecommendedPixelSizes) && decoded.defaultPrintAreaRecommendedPixelSizes.length <= 16 &&
+    decoded.defaultPrintAreaRecommendedPixelSizes.every((entry) => sameKeys(entry, ["horizontal", "vertical"]) && Number.isFinite(entry.horizontal) && Number.isFinite(entry.vertical));
 }
 
 /** Provider-supplied names and values reach the receipt only when they are plain tokens; anything else is dropped to a count. */
@@ -189,7 +189,7 @@ function safeObservation(observation) {
     variantsShippingToUS: observation.variantsShippingToUS,
     shipsToIncludesUS: observation.shipsToIncludesUS,
     printAreas: observation.printAreas.filter((area) => NAME_TOKEN.test(area.name)).map((area) => ({ name: area.name, required: area.required })),
-    defaultPrintAreaResolutions: observation.defaultPrintAreaResolutions.map((entry) => ({ horizontal: entry.horizontal, vertical: entry.vertical }))
+    defaultPrintAreaRecommendedPixelSizes: observation.defaultPrintAreaRecommendedPixelSizes.map((entry) => ({ horizontal: entry.horizontal, vertical: entry.vertical }))
   };
 }
 
@@ -252,7 +252,7 @@ async function evaluatePreflight(values, deps, libraryPresent) {
     if (git === undefined) gates.push(gate("source_revision_immutable", "unverified", "git state could not be read"));
     else if (git.head !== revision) gates.push(gate("source_revision_immutable", "invalid", "supplied revision is not the checked-out HEAD"));
     else if (git.clean !== true) gates.push(gate("source_revision_immutable", "invalid", "working tree is not clean"));
-    else gates.push(gate("source_revision_immutable", "satisfied", "HEAD equals the supplied revision and the tree is clean (dist/ is not compared)"));
+    else gates.push(gate("source_revision_immutable", "satisfied", "HEAD equals the supplied revision and the tree is clean; this does not verify the built dist/ or the compiled tuple (see unverifiedAssertions)"));
   }
   const packetHash = values["owner-packet-sha256"];
   gates.push(packetHash === undefined ? gate("owner_packet_sha256", "missing", "--owner-packet-sha256 of the packet the owner reviewed")
@@ -330,6 +330,28 @@ async function verifyWithHost(host, request) {
   }
 }
 
+/** What this command line does NOT establish, kept separate from the gates because no code path here can satisfy them. */
+function unverifiedAssertions() {
+  return [
+    { id: "built_artifact_matches_source", state: "unverified", note: "dist/ is not compared with src/; the source-revision gate proves only that HEAD equals the supplied commit and the tree is clean" },
+    { id: "compiled_tuple_verified_by_authority", state: "not_verified_operator_attestation_only", note: "GLOBAL-PHO-4X6 / US / Standard is compiled in from the owner-delegated decision; nothing here verifies it against a real authority, and HEAD does not verify it" },
+    { id: "account_access", state: "not_asserted", note: "the key's presence or this read's success is not account proof; the public statement that sandbox orders are not charged says nothing about request cost or account permission" },
+    { id: "request_cost", state: "UNKNOWN", note: "never assumed zero" },
+    { id: "customer_authority", state: "none", note: "no customer approval, order, quote or bundle authority is created or implied" }
+  ];
+}
+
+/** The interface a trusted host must implement; this command line cannot construct one. */
+function trustedHostInterface() {
+  return {
+    method: "verifyProductReadGrant(request)",
+    request: Object.keys(buildGrantRequest({ "decision-reference": "<ref>", "owner-permission-reference": "<ref>", "account-terms-reference": "<ref>", "request-cost-budget-reference": "<ref>", "receipt-path": "<path>" })),
+    mustReturn: "the request echoed with ownerPermissionVerified, accountTermsAccepted, requestCostBudgetApproved and singleUse all true and an unexpired expiresAt",
+    mustResolveWith: ["the owner's permission naming this one request", "the sandbox account terms the owner actually accepted", "the per-request cost budget"],
+    notAuthority: ["a reference that merely exists", "an operator attestation boolean", "the presence of an API key"]
+  };
+}
+
 function counters(extra = {}) {
   return { externalProviderCalls: 0, credentialReads: 0, networkRequests: 0, ...extra };
 }
@@ -348,6 +370,8 @@ function preflightReport(mode, values, evaluation) {
     requestPlan: requestPlan(),
     gates: evaluation.gates,
     missingGates: missing,
+    unverifiedAssertions: unverifiedAssertions(),
+    trustedHostInterface: trustedHostInterface(),
     ...counters(),
     requestCost: "UNKNOWN",
     limits: [
@@ -501,7 +525,7 @@ async function executeRead(values, deps, library, evaluation, report) {
     trustedHostGrant: { verified: true, expiresAt: evaluation.grantExpiry },
     attestations: {
       decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-      accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+      accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
       bundleEligible: false, trimOrTierApproval: false, customerApproval: false
     },
     recordedAt: new Date().toISOString()

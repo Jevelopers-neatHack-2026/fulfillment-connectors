@@ -171,7 +171,7 @@ export function recordingHttp(responses) {
 // SYNTHETIC: the body below is shaped from the documented Product Details
 // schema and the owner-delegated validation selection (decision 0003 R1-R3). It
 // is NOT a recording of any Prodigi response, and its finishes, countries and
-// resolutions are placeholders chosen for the tests, not observations of the
+// pixel dimensions are placeholders chosen for the tests, not observations of the
 // real product.
 
 export const PRODUCT_READ_SKU = "GLOBAL-PHO-4X6";
