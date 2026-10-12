@@ -1,0 +1,81 @@
+{
+  "mappingVersion": "fc-metering-source-map/1",
+  "kind": "producer_source_inventory",
+  "status": "producer_proposal_pending_owner_review",
+  "runtimeChanged": false,
+  "canonicalAdapterImplemented": false,
+  "producer": {
+    "repository": "Jevelopers-neatHack-2026/fulfillment-connectors",
+    "sourceRevision": "a1c04e6424626475c7c6db3d397cc6e3392c1600",
+    "sourcePath": "src/metering.ts",
+    "sourceBlob": "f8549dd5ebffa04118c8b7a7a2ee540fef30f4d5",
+    "privateStoreVersion": "/2"
+  },
+  "acceptedCanonicalMapping": null,
+  "identityInventory": [
+    {"role": "producer_event", "outboxField": "eventId", "candidateField": "event_id", "rule": "Persisted once; at-least-once delivery reuses this identity. Not a provider execution ID."},
+    {"role": "producer_observation", "outboxField": "observationId", "candidateField": "observation_id", "rule": "Preserve independently from logical, provider, transport and billable identities."},
+    {"role": "source_event", "outboxField": "sourceEventKey", "candidateField": null, "rule": "Retained privately as supplied or null. The current candidate does not emit it; do not infer it from event_id."},
+    {"role": "logical_operation", "outboxField": null, "candidateField": "logical_operation_id", "rule": "A grouping identity, never a universal deduplication or retry key."},
+    {"role": "billable_attempt", "outboxField": "attemptId", "candidateField": "billable_attempt_id", "rule": "Preserve distinct attempts. A producer attempt is not evidence that a charge occurred."},
+    {"role": "transport_attempt", "outboxField": null, "candidateField": "transport_attempt_id", "rule": "Preserve when supplied; do not generate a canonical UUID from an opaque token."},
+    {"role": "provider_request", "outboxField": null, "candidateField": "provider_request_id", "rule": "Preserve supplied provider-boundary facts only; not interchangeable with provider_attempt_id."},
+    {"role": "provider_execution", "outboxField": null, "candidateField": null, "rule": "No provider_attempt_id is emitted by this candidate. Missing identity remains unavailable."},
+    {"role": "reservation_request", "outboxField": null, "candidateField": "reservation_request_id", "rule": "A correlation reference, not an authenticated reservation or release decision."}
+  ],
+  "sourceFactFields": [
+    "event_type", "provider_id", "trusted_scope", "operation",
+    "observed_at", "occurred_at", "mode", "billing_mode", "evidence_mode",
+    "outcome", "completeness", "duration_ms", "source_refs",
+    "quote_amount", "charge_amount", "effect"
+  ],
+  "notEstablishedByCandidate": [
+    "canonical_event_family_and_version",
+    "canonical_uuid_mapping",
+    "provider_execution_identity_when_absent",
+    "canonical_content_hash_and_authenticated_evidence",
+    "deployed_producer_and_build_provenance",
+    "authenticated_environment_actor_and_action_grants",
+    "missing_model_or_billable_usage_units",
+    "minor_unit_currency_exponent_when_not_supplied",
+    "original_charge_identity_for_refunds_when_not_supplied"
+  ],
+  "preservationRules": [
+    "Keep source_event, producer_event, logical_operation, provider_execution, transport_attempt and billable_attempt identities distinct.",
+    "Keep observed_at and occurred_at distinct; neither is a provider signature or build timestamp.",
+    "Keep provider mode, billing mode and evidence mode independent.",
+    "Unknown remains unknown. Preserve exact amount representation, original currency and basis; do not infer an exponent for unscaled minor units.",
+    "Quotes, reservations, accepted orders, durations and status observations do not by themselves establish incurred expense or billable usage.",
+    "The private outbox fingerprint is not an accepted canonical content hash or proof of authenticated source evidence.",
+    "A source-preserving proposal may correlate an outbox record and its unchanged candidate by eventId/event_id, but this is not an implemented wire adapter or accepted Finance request.",
+    "Never serialize an entire private snapshot into a public receipt. Public examples must be explicitly synthetic and reviewed for scope and privacy."
+  ],
+  "requiredConsumerChecks": [
+    "valid_and_invalid_source_records",
+    "duplicate_redelivery_without_duplicate_posting",
+    "changed_payload_under_same_identity_rejected",
+    "distinct_attempts_preserved_under_one_logical_operation",
+    "lost_ack_and_restart_reuse_persisted_envelope",
+    "timeout_retains_unknown_outcome_and_unresolved_hold",
+    "missing_source_or_provider_identity_does_not_become_fabricated_identity",
+    "unsupported_canonical_mapping_fails_closed",
+    "unknown_money_and_quote_only_records_do_not_post_expense",
+    "provider_billing_evidence_modes_remain_independent",
+    "trusted_actor_scope_and_grant_negative_controls"
+  ],
+  "dependencies": [
+    {"ownerRole": "Creative and fulfillment", "issue": "Jevelopers-neatHack-2026/fulfillment-connectors#6", "action": "Review this pinned source inventory and supply sanitized immutable producer fixtures and build provenance for the agreed adapter."},
+    {"ownerRole": "Shared-contracts maintainer with affected producer and consumer owners", "issue": "Jevelopers-neatHack-2026/shared-contracts#11", "action": "Accept the event family, identity and unknown-value mapping at explicit schema/package/source pins."},
+    {"ownerRole": "Shared-contracts maintainer and Finance", "issue": "Jevelopers-neatHack-2026/shared-contracts#12", "action": "Accept the reservation mapping separately from source usage/charge facts."},
+    {"ownerRole": "Finance and reliability", "issue": "Jevelopers-neatHack-2026/cost-intelligence#15", "action": "Implement and execute this producer row against the real Finance adapter/intake at immutable pins and return positive, negative and recovery evidence."},
+    {"ownerRole": "Product and frontend application owner", "issue": "Jevelopers-neatHack-2026/getticketstub.com#16", "action": "Supply the applicable trusted context and exact order authority; order approval is not a substitute for Finance intake grants."}
+  ],
+  "acceptance": {
+    "producerConsumerAcknowledgement": "pending",
+    "financeGatewayExecution": "not_asserted",
+    "sandboxProviderExecution": "not_asserted",
+    "fulfillmentIssue6Complete": false,
+    "releaseGate16Complete": false,
+    "epic1Complete": false
+  }
+}
