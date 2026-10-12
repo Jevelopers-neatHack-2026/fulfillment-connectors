@@ -313,6 +313,17 @@ function isHexDigest(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
+function ownerBundleReferenceDigest(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return null;
+  const record = value as Readonly<Record<string, unknown>>;
+  const keys = Object.keys(record).sort().join("|");
+  if (keys !== ["content_hash", "contract", "id", "revision", "schema_version"].join("|")) return null;
+  if (record["contract"] !== "ProductionBundle" || record["schema_version"] !== "2.0.0") return null;
+  return isSha256Digest(record["content_hash"]) ? record["content_hash"] : null;
+}
+
 function isSha256Digest(value: unknown): value is string {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value);
 }
@@ -942,7 +953,7 @@ export class DeterministicSimulator implements Clock {
         if (fault === "refuse_before_dispatch") throw new SimulatedProviderError();
         const quantity = requireSafeInteger(command.quantity, 1);
         if (quantity > MAX_QUANTITY) throw new SimulatedProviderError();
-        const bundleDigest = simulator.digestOrFail(command.productionBundle);
+        const bundleDigest = simulator.bundleDigestOrFail(command.productionBundle);
         const raw = await context.transport.request<unknown>({
           operation: "quote", method: "POST", path: "/simulator/quotes", body: { bundleDigest, quantity }
         });
@@ -953,7 +964,7 @@ export class DeterministicSimulator implements Clock {
         const fault = simulator.takeAdapterFault("preflight");
         if (fault === "unsupported") return { status: "unsupported" };
         if (fault === "refuse_before_dispatch") throw new SimulatedProviderError();
-        const bundleDigest = simulator.digestOrFail(command.productionBundle);
+        const bundleDigest = simulator.bundleDigestOrFail(command.productionBundle);
         const specificationDigest = simulator.digestOrFail(command.printSpecification);
         const raw = await context.transport.request<unknown>({
           operation: "preflight", method: "POST", path: "/simulator/preflight", body: { bundleDigest, specificationDigest }
@@ -1023,6 +1034,16 @@ export class DeterministicSimulator implements Clock {
 
   private contextIsSimulated(context: AdapterCallContext): boolean {
     return context.mode === "simulated" && context.transport.mode === "simulated";
+  }
+
+  /**
+   * Quote/preflight bundle digest (FC-08). An owner-shaped ProductionBundle reference digests to its owner
+   * `content_hash`, so the simulated quote, the submit body and the authorization facts all carry the owner bundle
+   * hash. This runs only after `contextIsSimulated`; nothing it returns is trusted outside simulated mode, and every
+   * other value keeps the existing fixture digest byte-for-byte.
+   */
+  private bundleDigestOrFail(value: unknown): string {
+    return ownerBundleReferenceDigest(value) ?? this.digestOrFail(value);
   }
 
   private digestOrFail(value: unknown): string {

@@ -26,8 +26,14 @@ jobs:
         run: |
           node --version
           npm --version
-          test "$(node --version)" = "v24.15.0"
-          test "$(npm --version)" = "11.12.1"
+          test "$(node --version)" = "v24.21.0"
+          test "$(npm --version)" = "11.19.0"
+
+      - name: Check the vendored owner package before installing it
+        run: |
+          echo "771a9f565ea9df87a4c08e6e6d5ede422d2a5926182a95be082dc8ed7b8c4c43  vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz" | sha256sum -c -
+          tar -xzOf vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz package/package.json | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));const l=["preinstall","install","postinstall","prepare","prepublish","prepublishOnly","prepack","postpack"].filter((k)=>p.scripts&&p.scripts[k]!==undefined);if(l.length||p.dependencies){console.error("owner package has lifecycle scripts or dependencies");process.exit(1)}'
+          node -e 'const l=JSON.parse(require("fs").readFileSync("package-lock.json","utf8")).packages["node_modules/@jevelopers/shared-contracts"];if(l.resolved!=="file:vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz"||l.integrity!=="sha512-P462b8thg20g5RknBzdDL5mfxpXF+kpodLPCGrTe3kmKXrw9YZ21x3E/PuGEp0aEOGoiBZlq5JB4Pktq+2lBPg=="){console.error("lock entry differs from the pinned owner archive");process.exit(1)}'
 
       - name: Install locked dependencies
         run: npm ci
@@ -73,3 +79,6 @@ jobs:
 
       - name: Verify the simulated order authorization consumer and dispatch revalidation
         run: npm run verify:order-authorization
+
+      - name: Verify the ProductionBundle consumer over the owner package and the real corpus bytes
+        run: npm run verify:package

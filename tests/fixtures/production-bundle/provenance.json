@@ -1,0 +1,638 @@
+{
+  "schema": "fulfillment-production-bundle-fixture-provenance/1",
+  "note": "Synthetic, unaccepted producer diagnostic corpus. Not an approved ProductionBundle, no approval, no supplier eligibility, no order authority.",
+  "synthetic": true,
+  "accepted": false,
+  "handoffEligible": false,
+  "finance_receipt": null,
+  "canonical_usage_intake": "unavailable",
+  "usage_refs": [],
+  "producer": {
+    "repository": "Jevelopers-neatHack-2026/print-production",
+    "revision": "01a7b13813b27e5b925b1363543c2577e860ffff",
+    "linuxRun": 38216826905,
+    "artifactId": 11733229451,
+    "artifactName": "pp16-bundle-handoff-1",
+    "artifactZipSha256": "eb9af5b9aae788561d2a7f8f67f3fce579cb53323751856e079f8c77db4d0300",
+    "corpusJsonSha256": "d3e5560d1f7030ac4bf1d7164530a1137234acd1ebedd39043c356bf5604949f",
+    "runtime": {
+      "node": "v24.21.0",
+      "platform": "linux"
+    }
+  },
+  "sharedContractsPin": {
+    "package": "@jevelopers/shared-contracts",
+    "version": "0.9.7",
+    "source_repository": "Jevelopers-neatHack-2026/shared-contracts",
+    "source_pr": 31,
+    "source_revision": "d432ad5c895a67155affeaa05cd8423c758d95c3",
+    "archive": "jevelopers-shared-contracts-0.9.7.tgz",
+    "archive_sha256": "771a9f565ea9df87a4c08e6e6d5ede422d2a5926182a95be082dc8ed7b8c4c43",
+    "integrity": "sha512-P462b8thg20g5RknBzdDL5mfxpXF+kpodLPCGrTe3kmKXrw9YZ21x3E/PuGEp0aEOGoiBZlq5JB4Pktq+2lBPg==",
+    "package_content_digest": "sha256:3b4267aceaf250d4d2506ad9fad8c2e83964810078f1c01ef5d6f55100b63fe1",
+    "fixture_digest": "sha256:8db06e6348ff798c066f429bb0b21d5b7fd56ce07705b0133584bfe4f8d829ab",
+    "accepted": false,
+    "status": "unaccepted-development-candidate",
+    "live_integration": false
+  },
+  "counts": {
+    "regularFiles": 65,
+    "receiptEntries": 64,
+    "byKind": {
+      "corpus-json": 1,
+      "baseline": 8,
+      "control": 1,
+      "variant": 55
+    }
+  },
+  "bundle": {
+    "id": "a66be59e-f7d2-4c44-a6c4-212a5e1ac05c",
+    "revision": 1,
+    "hash": "sha256:ca9c78c3ac7823ea2b81b395a6f91acae2abe0b347f65bcf0ff067dce7993ea4",
+    "schemaVersion": "2.0.0"
+  },
+  "scope": {
+    "tenant_id": "123e4567-e89b-42d3-a456-000000000001",
+    "project_id": "123e4567-e89b-42d3-a456-000000000002"
+  },
+  "trustedCommitment": {
+    "name": "trusted-commitment.json",
+    "size": 6258,
+    "sha256": "b7fa86a6e9dbff06febc8cc28aad66a7a56eb12267d5a50c6120968cac424e49"
+  },
+  "manifestRefs": {
+    "spec_ref": {
+      "content_hash": "sha256:0c273edfaeceacf89cc7c33a4fb4a0d7395bf6d104672ff3ccc9ba796f3444b8",
+      "contract": "PrintSpec",
+      "id": "123e4567-e89b-42d3-a456-000000000028",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "capability_ref": {
+      "content_hash": "sha256:4699ebfee9d2b1693b7381b754787cd8c1c475caad87cbe19c3dde4cd84cc0ea",
+      "contract": "FulfillmentCapabilitySnapshot",
+      "id": "123e4567-e89b-42d3-a456-000000000029",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "composition_ref": {
+      "content_hash": "sha256:6e9d5d187328082b08f9d338a6d3fe1d94ccebe8c6a3ff610aa5ba3e9b140e4d",
+      "contract": "Composition",
+      "id": "123e4567-e89b-42d3-a456-00000000003d",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "facts_ref": {
+      "content_hash": "sha256:bd00e3ae87ea3d39ff666ccef7fa56fbc8259782a183466b6e8db4d7368bbf8f",
+      "contract": "EventIntelligencePackage",
+      "id": "123e4567-e89b-42d3-a456-000000000001",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "template_ref": {
+      "content_hash": "sha256:c8472fe3f86de98246b284c730353f05e972d2a951b02be54eaf000e9a6e5721",
+      "contract": "TemplateSpec",
+      "id": "123e4567-e89b-42d3-a456-000000000033",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "approval_ref": {
+      "content_hash": "sha256:fe33269d9ba3d6bfb7c061f14153c3618d42411b4f2e262bdd1ab2fe15687f8c",
+      "contract": "ApprovalReceipt",
+      "id": "123e4567-e89b-42d3-a456-000000000100",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "handoff_ref": {
+      "content_hash": "sha256:4fcf8ed545a7b3597104222186004116f8d737cc22e99f826d8d13a02453d424",
+      "contract": "ArtifactHandoffManifest",
+      "id": "123e4567-e89b-42d3-a456-000000000110",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "renderer_ref": {
+      "content_hash": "sha256:5a43c0a1adab23b329b8cbbb0e9c45d4e8242d16ba61a9c164e131145a508052",
+      "contract": "ProductionRuntime",
+      "id": "123e4567-e89b-42d3-a456-00000000001e",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    },
+    "lineage_ref": {
+      "content_hash": "sha256:b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7",
+      "contract": "ProductionResource",
+      "id": "c08515f1-c71a-4234-8ecf-49e46354d623",
+      "revision": 1,
+      "schema_version": "1.0.0"
+    }
+  },
+  "composedPreviewHash": null,
+  "rowScope": null,
+  "extraBin": {
+    "literal": "pp16-extra",
+    "length": 10,
+    "sha256": "810e1fc23da943f52eecb417df9d17c810744242879f20f95f318f4ac754100f"
+  },
+  "pins": [
+    {
+      "path": "CORPUS.json",
+      "kind": "corpus-json",
+      "size": 16161,
+      "sha256": "d3e5560d1f7030ac4bf1d7164530a1137234acd1ebedd39043c356bf5604949f"
+    },
+    {
+      "path": "bundle/archive.zip",
+      "kind": "baseline",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "bundle/detached.json",
+      "kind": "baseline",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "bundle/lineage.json",
+      "kind": "baseline",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "bundle/manifest.json",
+      "kind": "baseline",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "bundle/output.pdf",
+      "kind": "baseline",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "bundle/output.png",
+      "kind": "baseline",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "bundle/output.svg",
+      "kind": "baseline",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "bundle/preflight.json",
+      "kind": "baseline",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "bundle/trusted-commitment.json",
+      "kind": "control",
+      "size": 6258,
+      "sha256": "b7fa86a6e9dbff06febc8cc28aad66a7a56eb12267d5a50c6120968cac424e49"
+    },
+    {
+      "path": "variants/extra-file/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/extra-file/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/extra-file/extra.bin",
+      "kind": "variant",
+      "size": 10,
+      "sha256": "810e1fc23da943f52eecb417df9d17c810744242879f20f95f318f4ac754100f"
+    },
+    {
+      "path": "variants/extra-file/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "variants/extra-file/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "variants/extra-file/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/extra-file/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/extra-file/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/extra-file/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/missing-manifest/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/missing-manifest/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/missing-manifest/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "variants/missing-manifest/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/missing-manifest/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/missing-manifest/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/missing-manifest/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/missing-payload/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/missing-payload/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/missing-payload/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "variants/missing-payload/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/missing-payload/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/missing-payload/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/missing-payload/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/tampered-detached/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/tampered-detached/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "7c532cc2e251f09713c786da1c7f9a94ddc8f94cacafb5188f4c8ecff3e26852"
+    },
+    {
+      "path": "variants/tampered-detached/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "variants/tampered-detached/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "variants/tampered-detached/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/tampered-detached/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/tampered-detached/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/tampered-detached/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/tampered-manifest/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/tampered-manifest/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/tampered-manifest/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "variants/tampered-manifest/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "c6b416fd9504088fc3f684b2c13b2fece104ea5821f0f04ef387a65fa26b23cc"
+    },
+    {
+      "path": "variants/tampered-manifest/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/tampered-manifest/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/tampered-manifest/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/tampered-manifest/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/tampered-payload/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/tampered-payload/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/tampered-payload/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "dd891c7d5282a21dc51294248120e5ec8324a20b38e8a9806b3d9be36b4e4659"
+    },
+    {
+      "path": "variants/tampered-payload/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "variants/tampered-payload/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/tampered-payload/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/tampered-payload/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/tampered-payload/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    },
+    {
+      "path": "variants/valid/archive.zip",
+      "kind": "variant",
+      "size": 846407,
+      "sha256": "e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87"
+    },
+    {
+      "path": "variants/valid/detached.json",
+      "kind": "variant",
+      "size": 1286,
+      "sha256": "1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+    },
+    {
+      "path": "variants/valid/lineage.json",
+      "kind": "variant",
+      "size": 13886,
+      "sha256": "b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7"
+    },
+    {
+      "path": "variants/valid/manifest.json",
+      "kind": "variant",
+      "size": 7357,
+      "sha256": "e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d"
+    },
+    {
+      "path": "variants/valid/output.pdf",
+      "kind": "variant",
+      "size": 22610,
+      "sha256": "e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9"
+    },
+    {
+      "path": "variants/valid/output.png",
+      "kind": "variant",
+      "size": 27833,
+      "sha256": "defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb"
+    },
+    {
+      "path": "variants/valid/output.svg",
+      "kind": "variant",
+      "size": 766686,
+      "sha256": "5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b"
+    },
+    {
+      "path": "variants/valid/preflight.json",
+      "kind": "variant",
+      "size": 7419,
+      "sha256": "e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b"
+    }
+  ],
+  "supersedes": {
+    "note": "The previous preferred input, recorded by digest and source. Its bytes remain in the superseded artifact directory and in git history; only the files in keptFiles are kept in-tree, for anchor/bundle cross-binding negatives.",
+    "source": "git:60e075da382de6d6388f2320b0c95d374b0007ea:tests/fixtures/production-bundle/provenance.json (initial implementation candidate; artifact 11727293834 at 300f997)",
+    "provenanceSha256": "1043f2f115a1258ee5e84c84759498008dc674de9887ff10f5c4ad7cb7c4db24",
+    "producerRevision": "300f997c87e36077a93dd1c4951420878a5c847c",
+    "linuxRun": 38205370188,
+    "artifactId": 11727293834,
+    "artifactZipSha256": "c92b8571ef6fe646284eec7b810ccf669651075124a98494409b64abe4fdc43d",
+    "corpusJsonSha256": "0d8422683915890b15607724c25420326d97be0676651df8f88673e36395bef9",
+    "bundle": {
+      "id": "ce50cacc-9ad3-41ec-a207-59e3740322ad",
+      "revision": 1,
+      "hash": "sha256:df2e9274ea5157ac500a6d9e62d313b30d1a499b9a3a97c40b2c3d7bae980257",
+      "schemaVersion": "2.0.0"
+    },
+    "trustedCommitment": {
+      "name": "trusted-commitment.json",
+      "size": 6258,
+      "sha256": "3450bfc30e854bb6d78db0573750e32d17ec91cb61e567f85c7ceef776b43a21"
+    },
+    "sharedContractsPinUnchanged": true,
+    "delta": {
+      "changed": [
+        "CORPUS.json",
+        "bundle/archive.zip",
+        "bundle/detached.json",
+        "bundle/lineage.json",
+        "bundle/manifest.json",
+        "bundle/preflight.json",
+        "bundle/trusted-commitment.json",
+        "variants/extra-file/archive.zip",
+        "variants/extra-file/detached.json",
+        "variants/extra-file/lineage.json",
+        "variants/extra-file/manifest.json",
+        "variants/extra-file/preflight.json",
+        "variants/missing-manifest/archive.zip",
+        "variants/missing-manifest/detached.json",
+        "variants/missing-manifest/lineage.json",
+        "variants/missing-manifest/preflight.json",
+        "variants/missing-payload/archive.zip",
+        "variants/missing-payload/detached.json",
+        "variants/missing-payload/manifest.json",
+        "variants/missing-payload/preflight.json",
+        "variants/tampered-detached/archive.zip",
+        "variants/tampered-detached/detached.json",
+        "variants/tampered-detached/lineage.json",
+        "variants/tampered-detached/manifest.json",
+        "variants/tampered-detached/preflight.json",
+        "variants/tampered-manifest/archive.zip",
+        "variants/tampered-manifest/detached.json",
+        "variants/tampered-manifest/lineage.json",
+        "variants/tampered-manifest/manifest.json",
+        "variants/tampered-manifest/preflight.json",
+        "variants/tampered-payload/archive.zip",
+        "variants/tampered-payload/detached.json",
+        "variants/tampered-payload/lineage.json",
+        "variants/tampered-payload/manifest.json",
+        "variants/tampered-payload/preflight.json",
+        "variants/valid/archive.zip",
+        "variants/valid/detached.json",
+        "variants/valid/lineage.json",
+        "variants/valid/manifest.json",
+        "variants/valid/preflight.json"
+      ],
+      "unchanged": [
+        "bundle/output.pdf",
+        "bundle/output.png",
+        "bundle/output.svg",
+        "variants/extra-file/extra.bin",
+        "variants/extra-file/output.pdf",
+        "variants/extra-file/output.png",
+        "variants/extra-file/output.svg",
+        "variants/missing-manifest/output.pdf",
+        "variants/missing-manifest/output.png",
+        "variants/missing-manifest/output.svg",
+        "variants/missing-payload/output.pdf",
+        "variants/missing-payload/output.png",
+        "variants/missing-payload/output.svg",
+        "variants/tampered-detached/output.pdf",
+        "variants/tampered-detached/output.png",
+        "variants/tampered-detached/output.svg",
+        "variants/tampered-manifest/output.pdf",
+        "variants/tampered-manifest/output.png",
+        "variants/tampered-manifest/output.svg",
+        "variants/tampered-payload/output.pdf",
+        "variants/tampered-payload/output.png",
+        "variants/tampered-payload/output.svg",
+        "variants/valid/output.pdf",
+        "variants/valid/output.png",
+        "variants/valid/output.svg"
+      ]
+    },
+    "deltaMatchesReceiptChangesFromEarlierCorpus": true,
+    "keptFiles": [
+      {
+        "path": "detached.json",
+        "size": 1286,
+        "sha256": "a1b1fc4ae5b7ed103ab0e52b4154d5a82dad7f6decc0dc28371f613bfb486124"
+      },
+      {
+        "path": "manifest.json",
+        "size": 7357,
+        "sha256": "06997583efbd588cd6498aeff720eeb60ce4192d6d3fc9541607ec32cee337f2"
+      },
+      {
+        "path": "trusted-commitment.json",
+        "size": 6258,
+        "sha256": "3450bfc30e854bb6d78db0573750e32d17ec91cb61e567f85c7ceef776b43a21"
+      }
+    ]
+  }
+}

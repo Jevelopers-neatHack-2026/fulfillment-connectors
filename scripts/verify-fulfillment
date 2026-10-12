@@ -14,6 +14,16 @@ import {
   runOrderAuthorizationTests,
   validOrderAuthorizationRunnerReport
 } from "./run-order-authorization-tests.mjs";
+import { PACKAGE_SUITE_CASE_COUNT, runPackageTests, validPackageRunnerReport } from "./run-package-tests.mjs";
+import {
+  PACKAGE_BLOCKERS,
+  PACKAGE_EVIDENCE_DIR,
+  buildPackageAssessment,
+  buildPackageBundleReport,
+  packageEvidenceDirAllowed,
+  sourceRevision,
+  validPackageAssessment
+} from "./package-verification.mjs";
 
 let allSharedShapes = [];
 let contractOwnership = {};
@@ -29,6 +39,7 @@ let statusApiAvailable = false;
 let prodigiProductDetailsApiAvailable = false;
 let pngInspectionApiAvailable = false;
 let orderAuthorizationApiAvailable = false;
+let packageApiAvailable = false;
 let providerEnvironmentMatrix = null;
 try {
   const catalog = await import("../dist/index.js");
@@ -65,6 +76,14 @@ try {
   // Keep argument and missing-build failures machine-readable even before a build.
 }
 
+try {
+  const productionBundle = await import("../dist/production-bundle.js");
+  packageApiAvailable = typeof productionBundle.createProductionBundleGate === "function" &&
+    typeof productionBundle.resolveTrustAnchor === "function" && typeof productionBundle.validateProductionBundleBytes === "function";
+} catch {
+  // A missing build stays machine-readable below.
+}
+
 let simulatorFixtureVersion = null;
 let simulatorProviderId = null;
 let simulatorApiAvailable = false;
@@ -98,7 +117,7 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const allowedSuites = new Set(["contract", "provider-matrix", "security", "metering", "catalog", "mock", "quote", "attempt-store", "comparison", "status", "prodigi-product-details", "png-inspection", "order-authorization", "sandbox", "release"]);
+const allowedSuites = new Set(["contract", "provider-matrix", "security", "metering", "catalog", "mock", "quote", "attempt-store", "comparison", "status", "prodigi-product-details", "png-inspection", "order-authorization", "package", "sandbox", "release"]);
 const allowedModes = new Set(["simulated", "sandbox"]);
 function validStatusRunnerReport(report) {
   const reportKeys = ["schemaVersion", "suite", "mode", "status", "passed", "failed", "results", "processExitCode",
@@ -253,6 +272,9 @@ let statusReport = null;
 let prodigiProductDetailsReport = null;
 let pngInspectionReport = null;
 let orderAuthorizationReport = null;
+let packageReport = null;
+let packageBundleReport = null;
+let packageRevision = null;
 let failureReasons = [];
 let status = "failed";
 
@@ -262,7 +284,7 @@ else if (!allowedSuites.has(args.suite)) failureReasons.push("unknown_suite");
 if (args.mode === undefined) failureReasons.push("mode_required");
 else if (!allowedModes.has(args.mode)) failureReasons.push("invalid_mode");
 if (args["evidence-dir"] === undefined) failureReasons.push("evidence_dir_required");
-if (process.version !== "v24.15.0") failureReasons.push("runtime_version_mismatch");
+if (process.version !== "v24.21.0") failureReasons.push("runtime_version_mismatch");
 if (args.suite === "provider-matrix" && args.mode !== "simulated") failureReasons.push("provider_matrix_requires_simulated_mode");
 if (args.suite === "security" && args.mode !== "simulated") failureReasons.push("security_suite_requires_simulated_mode");
 if (args.suite === "catalog" && args.mode !== "simulated" && allowedModes.has(args.mode)) failureReasons.push("catalog_suite_requires_simulated_mode");
@@ -275,6 +297,8 @@ if (args.suite === "status" && args.mode !== "simulated") failureReasons.push("s
 if (args.suite === "prodigi-product-details" && args.mode !== "simulated") failureReasons.push("prodigi_product_details_requires_simulated_mode");
 if (args.suite === "png-inspection" && args.mode !== "simulated") failureReasons.push("png_inspection_requires_simulated_mode");
 if (args.suite === "order-authorization" && args.mode !== "simulated") failureReasons.push("order_authorization_requires_simulated_mode");
+if (args.suite === "package" && args.mode !== "simulated") failureReasons.push("package_requires_simulated_mode");
+if (args.suite === "package" && args["evidence-dir"] !== undefined && !packageEvidenceDirAllowed(repositoryRoot, args["evidence-dir"])) failureReasons.push("unsafe_evidence_directory");
 
 if (failureReasons.length === 0 && args.suite === "contract" && args.mode === "simulated") {
   if (!catalogAvailable) failureReasons.push("runtime_build_prerequisite_missing");
@@ -491,6 +515,27 @@ if (failureReasons.length === 0 && args.suite === "contract" && args.mode === "s
   } catch {
     failureReasons.push("order_authorization_suite_prerequisite_failed");
   }
+} else if (failureReasons.length === 0 && args.suite === "package" && args.mode === "simulated") {
+  if (!packageApiAvailable) failureReasons.push("package_runtime_build_prerequisite_missing");
+  try {
+    if (failureReasons.length === 0) {
+      packageReport = runPackageTests();
+      checks = packageReport.results ?? [];
+      if (!validPackageRunnerReport(packageReport)) {
+        failureReasons.push("package_runner_report_invalid");
+      } else if (packageReport.status === "passed" && packageReport.passed === PACKAGE_SUITE_CASE_COUNT && packageReport.failed === 0 &&
+        checks.length === PACKAGE_SUITE_CASE_COUNT && checks.every((check) => check.status === "passed")) {
+        packageRevision = sourceRevision(repositoryRoot);
+        packageBundleReport = await buildPackageBundleReport({ repositoryRoot, revision: packageRevision.sha });
+        if (packageBundleReport.verdict === "integrity_passed_blocked") status = "passed";
+        else failureReasons.push("package_baseline_bundle_report_not_integrity_passed");
+      } else {
+        failureReasons.push("one_or_more_package_checks_failed");
+      }
+    }
+  } catch {
+    failureReasons.push("package_suite_prerequisite_failed");
+  }
 } else if (failureReasons.length === 0 && args.suite === "metering" && args.mode === "simulated") {
   if (!catalogAvailable) failureReasons.push("metering_build_prerequisite_missing");
   try {
@@ -524,7 +569,7 @@ const result = {
   completedAt: new Date().toISOString(),
   runtime: {
     node: process.version,
-    expectedNode: "24.15.0",
+    expectedNode: "24.21.0",
     package: "@jevelopers/fulfillment-connectors@0.1.0",
     liveModeSupported: false
   },
@@ -551,6 +596,8 @@ const result = {
             ? "local_private_bounded_png_byte_observation_suite"
           : args.suite === "order-authorization"
             ? "local_private_simulated_order_authorization_consumer_suite"
+          : args.suite === "package"
+            ? "local_private_production_bundle_owner_byte_verification_suite"
           : args.suite === "metering"
             ? "local_private_metering_fixture_suite"
             : "local_private_fixture_contract_suite"
@@ -566,6 +613,7 @@ const result = {
     ...(args.suite === "prodigi-product-details" ? prodigiProductDetailsBlockers : []),
     ...(args.suite === "png-inspection" ? pngInspectionBlockers : []),
     ...(args.suite === "order-authorization" ? orderAuthorizationBlockers : []),
+    ...(args.suite === "package" ? PACKAGE_BLOCKERS : []),
     ...(args.suite === "attempt-store" ? attemptStoreBlockers : []),
     ...(args.suite === "comparison" ? comparisonBlockers : []),
     ...(args.suite === "provider-matrix" ? [
@@ -890,6 +938,9 @@ const result = {
       evidenceWriteStatus: "not_attempted"
     }
   } : {}),
+  ...(args.suite === "package" ? {
+    packageAssessment: buildPackageAssessment({ runnerReport: packageReport, bundleReport: packageBundleReport, revision: packageRevision, status, checks })
+  } : {}),
   providerMatrixAssessment: args.suite === "provider-matrix" ? {
     schemaVersion: "fulfillment-provider-matrix-assessment/1",
     evidenceScope: "documented_metadata_and_private_policy_fixtures_only",
@@ -958,16 +1009,22 @@ const result = {
   evidenceFile: null
 };
 
+if (args.suite === "package" && status === "passed" && !validPackageAssessment(result.packageAssessment)) {
+  status = "failed";
+  result.status = "failed";
+  failureReasons.push("package_assessment_invalid");
+}
+
 if (args["evidence-dir"] !== undefined) {
-  const evidenceDir = args.suite === "png-inspection" || args.suite === "order-authorization"
+  const evidenceDir = args.suite === "png-inspection" || args.suite === "order-authorization" || args.suite === "package"
     ? path.resolve(repositoryRoot, args["evidence-dir"])
     : path.resolve(args["evidence-dir"]);
   const evidenceFile = path.join(evidenceDir, "result.json");
   result.evidenceFile = evidenceFile;
   result.completedAt = new Date().toISOString();
   try {
-    if (args.suite === "png-inspection" || args.suite === "order-authorization") {
-      const expectedEvidenceDir = path.resolve(repositoryRoot, args.suite === "png-inspection" ? "evidence/FC-08-10-PNG" : "evidence/FC-ORDER-AUTH");
+    if (args.suite === "png-inspection" || args.suite === "order-authorization" || args.suite === "package") {
+      const expectedEvidenceDir = path.resolve(repositoryRoot, args.suite === "png-inspection" ? "evidence/FC-08-10-PNG" : args.suite === "package" ? PACKAGE_EVIDENCE_DIR : "evidence/FC-ORDER-AUTH");
       if (evidenceDir !== expectedEvidenceDir) throw new Error("unsafe_evidence_directory");
       for (const candidate of [path.resolve(repositoryRoot, "evidence"), evidenceDir]) {
         try {
@@ -987,6 +1044,7 @@ if (args["evidence-dir"] !== undefined) {
     await mkdir(evidenceDir, { recursive: true });
     if (result.pngInspectionAssessment !== undefined) result.pngInspectionAssessment.evidenceWriteStatus = "written";
     if (result.orderAuthorizationAssessment !== undefined) result.orderAuthorizationAssessment.evidenceWriteStatus = "written";
+    if (result.packageAssessment !== undefined) result.packageAssessment.evidenceWriteStatus = "written";
     await writeFile(evidenceFile, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8", flag: "w" });
   } catch {
     status = "failed";
@@ -1006,6 +1064,7 @@ if (args["evidence-dir"] !== undefined) {
       ...(args.suite === "prodigi-product-details" ? prodigiProductDetailsBlockers : []),
       ...(args.suite === "png-inspection" ? pngInspectionBlockers : []),
       ...(args.suite === "order-authorization" ? orderAuthorizationBlockers : []),
+      ...(args.suite === "package" ? PACKAGE_BLOCKERS : []),
       ...failureReasons
     ];
     if (result.catalogAssessment !== undefined) result.catalogAssessment.localFixtureResult = "failed";
@@ -1026,6 +1085,10 @@ if (args["evidence-dir"] !== undefined) {
     if (result.orderAuthorizationAssessment !== undefined) {
       result.orderAuthorizationAssessment.localFixtureResult = "failed";
       result.orderAuthorizationAssessment.evidenceWriteStatus = "failed";
+    }
+    if (result.packageAssessment !== undefined) {
+      result.packageAssessment.localFixtureResult = "failed";
+      result.packageAssessment.evidenceWriteStatus = "failed";
     }
   }
 }

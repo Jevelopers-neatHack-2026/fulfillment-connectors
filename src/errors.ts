@@ -24,7 +24,9 @@ export type ConnectorErrorCode =
   | "provider_failure"
   | "idempotency_conflict"
   | "sandbox_disabled"
-  | "mode_mismatch";
+  | "mode_mismatch"
+  | "bundle_invalid"
+  | "bundle_changed";
 
 export type SideEffectState = "not_dispatched" | "possible" | "confirmed" | "unknown";
 
@@ -52,7 +54,9 @@ const SAFE_MESSAGES: Readonly<Record<ConnectorErrorCode, string>> = {
   provider_failure: "The provider operation failed.",
   idempotency_conflict: "The idempotency key is already bound to a different request.",
   sandbox_disabled: "Sandbox mode is disabled or lacks required release prerequisites.",
-  mode_mismatch: "The provider adapter and transport mode do not match the runtime mode."
+  mode_mismatch: "The provider adapter and transport mode do not match the runtime mode.",
+  bundle_invalid: "The production bundle did not pass validation.",
+  bundle_changed: "The production bundle changed before dispatch."
 };
 
 const RETRYABLE_CODES: ReadonlySet<ConnectorErrorCode> = new Set([

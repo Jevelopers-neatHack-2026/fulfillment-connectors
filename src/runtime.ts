@@ -1,5 +1,14 @@
 import { ConnectorError, type ConnectorErrorCode } from "./errors.js";
 import { ALL_SHARED_SHAPES, AUXILIARY_SHAPES, CONTRACT_OWNERSHIP, INPUT_SHAPES, OUTPUT_SHAPES, uniqueShapes } from "./contracts.js";
+import {
+  classifyRecheckFailure,
+  evidenceFromReport,
+  isGenuineProductionBundleGate,
+  validateGateReport,
+  type ProductionBundleGate,
+  type ProductionBundleGateRequest,
+  type ProductionBundleReport
+} from "./production-bundle-contract.js";
 import type {
   AdapterCallContext,
   AttemptEffectState,
@@ -71,6 +80,12 @@ interface ExecuteHooks<T> {
 interface Decoded<T> {
   readonly value: T;
   readonly trustedScope: TrustedScope;
+}
+
+interface PrecheckedDecode {
+  readonly shapes: readonly SharedShape[];
+  readonly scopeSnapshot: TrustedScope;
+  readonly envelopeSnapshot: unknown;
 }
 
 function snapshotJson(value: unknown, seen = new WeakSet<object>()): unknown {
@@ -204,11 +219,29 @@ export class FulfillmentConnectorRuntime {
   }
 
   async submit(envelope: unknown, trustedScope: TrustedScope): Promise<ConnectorResponse<SubmitResult>> {
-    const { value: command, trustedScope: scope } = await this.decode<SubmitCommand>("submit", envelope, trustedScope);
+    // PBR-23: decode's pure prechecks (mode, scope shape, snapshot, binding availability) keep their existing codes and
+    // precedence; the ProductionBundle hard block then runs BEFORE ContractValidator.validateInbound or any other port.
+    const prechecked = this.precheckDecode("submit", envelope, trustedScope);
+    const bundleGate = this.assertSubmitBundleGate();
+    const { value: command, trustedScope: scope } = await this.decodeAfterPrecheck<SubmitCommand>("submit", prechecked);
     this.validateSubmissionCommand(command, "submit");
     this.assertProviderSupport("submit");
     this.validateSubmissionDeclaration();
     const providerId = this.descriptor.providerId;
+    const bundleRequest: ProductionBundleGateRequest | undefined = bundleGate === undefined ? undefined : {
+      trustedScope: scope,
+      bundleDigest: command.productionBundleDigest,
+      providerId,
+      runtimeMode: this.mode,
+      transportMode: this.dependencies.transport.mode,
+      quote: command.quote,
+      envelopeBundle: command.productionBundle
+    };
+    // The gate runs before the adapter pre-submit, the claim, the budget and the metering write: an invalid bundle
+    // reaches no other port. Its report is re-validated here; the gate's own say-so is never trusted.
+    const bundleReport: ProductionBundleReport | undefined = bundleGate === undefined || bundleRequest === undefined
+      ? undefined
+      : await this.runBundleGate(bundleGate, "checkBeforeSubmit", bundleRequest, "not_dispatched");
 
     let preSubmit: ProviderResult<PreflightReport>;
     try {
@@ -322,7 +355,7 @@ export class FulfillmentConnectorRuntime {
     }
 
     let currentAttempt = claim;
-    return this.execute(
+    const submitResponse = await this.execute(
       "submit",
       scope,
       async (context) => {
@@ -393,14 +426,18 @@ export class FulfillmentConnectorRuntime {
             `authorization-claim:${authorizationClaim.claimReference}`,
             `quote:${command.quote.quoteId}`,
             `bundle:${command.productionBundleDigest}`,
+            ...(bundleReport === undefined ? [] : [`bundle-validation:${bundleReport.reportDigest}`]),
             ...(currentAttempt.budgetReservationReference === undefined
               ? []
               : [`budget-reservation:${currentAttempt.budgetReservationReference}`])
           ],
           quoteAmount: quoteAmountEvidence(command.quote.totalMinor, command.quote.currency)
         },
-        ...(typeof this.dependencies.authorizationVerifier.revalidateBeforeDispatch === "function" ? {
-          beforeDispatch: (transportCalled: boolean) => this.revalidateAuthorizationBeforeDispatch(
+        ...(bundleGate !== undefined || typeof this.dependencies.authorizationVerifier.revalidateBeforeDispatch === "function" ? {
+          beforeDispatch: (transportCalled: boolean) => this.recheckBeforeDispatch(
+            bundleGate,
+            bundleRequest,
+            bundleReport,
             authorization,
             authorizationClaim,
             transportCalled
@@ -427,6 +464,9 @@ export class FulfillmentConnectorRuntime {
         }
       }
     );
+    return bundleReport === undefined
+      ? submitResponse
+      : { ...submitResponse, productionBundleEvidence: evidenceFromReport(bundleReport) };
   }
 
   async getStatus(envelope: unknown, trustedScope: TrustedScope): Promise<ConnectorResponse<StatusResult>> {
@@ -495,7 +535,89 @@ export class FulfillmentConnectorRuntime {
     });
   }
 
+  /**
+   * ProductionBundle submit gate, evaluated before ANY injected port (PBR-19/PBR-23):
+   * - Owner 0.9.7 cannot return an eligible state, so no non-simulated submit can be justified. This is unconditional:
+   *   it does not depend on a gate, a binding state, `sandboxEnabled` or any configuration.
+   * - An object that is not a genuine, frozen gate created by `createProductionBundleGate` is rejected.
+   * - Once the `production_bundle` binding is accepted, a missing gate is `contract_missing`.
+   * Only `submit` is affected; quote, preflight, status, shipment, cancel and discovery are untouched.
+   */
+  private assertSubmitBundleGate(): ProductionBundleGate | undefined {
+    if (this.mode !== "simulated" || this.dependencies.transport.mode !== "simulated") {
+      throw this.failure("submit", "bundle_invalid", "not_dispatched");
+    }
+    const gate: unknown = this.dependencies.productionBundleGate;
+    if (gate === undefined) {
+      if (this.bindingFor("production_bundle").state === "accepted") throw this.failure("submit", "contract_missing", "not_dispatched");
+      return undefined;
+    }
+    if (!isGenuineProductionBundleGate(gate)) throw this.failure("submit", "bundle_invalid", "not_dispatched");
+    return gate;
+  }
+
+  private async runBundleGate(
+    gate: ProductionBundleGate,
+    method: "checkBeforeSubmit" | "recheckBeforeDispatch",
+    request: ProductionBundleGateRequest,
+    sideEffectState: AttemptEffectState
+  ): Promise<ProductionBundleReport> {
+    let candidate: unknown;
+    try {
+      candidate = await gate[method](request);
+    } catch {
+      throw this.failure("submit", "bundle_invalid", sideEffectState);
+    }
+    const validated = validateGateReport(candidate, { bundleDigest: request.bundleDigest });
+    if (!validated.ok || validated.report.verdict !== "integrity_passed_blocked") {
+      throw this.failure("submit", "bundle_invalid", sideEffectState);
+    }
+    return validated.report;
+  }
+
+  /**
+   * Runs immediately before EVERY transport request (including adapter retries):
+   * 1. await the gate's re-resolution, bounded re-read and owner re-verification;
+   * 2. await the authorization revalidation, which stays the LAST await;
+   * 3. compare synchronously. No await sits between this comparison and the transport call.
+   */
+  private async recheckBeforeDispatch(
+    gate: ProductionBundleGate | undefined,
+    request: ProductionBundleGateRequest | undefined,
+    prior: ProductionBundleReport | undefined,
+    authorization: AuthorizationCheck,
+    claim: AuthorizationClaimed,
+    transportCalled: boolean
+  ): Promise<void> {
+    const sideEffectState: AttemptEffectState = transportCalled ? "possible" : "not_dispatched";
+    let rechecked: unknown;
+    if (gate !== undefined && request !== undefined) {
+      try {
+        rechecked = await gate.recheckBeforeDispatch(request);
+      } catch {
+        throw this.failure("submit", "bundle_invalid", sideEffectState);
+      }
+    }
+    if (typeof this.dependencies.authorizationVerifier.revalidateBeforeDispatch === "function") {
+      await this.revalidateAuthorizationBeforeDispatch(authorization, claim, transportCalled);
+    }
+    if (gate === undefined || request === undefined || prior === undefined) return;
+    const validated = validateGateReport(rechecked, { bundleDigest: request.bundleDigest });
+    if (!validated.ok) throw this.failure("submit", "bundle_invalid", sideEffectState);
+    const report = validated.report;
+    if (report.verdict !== "integrity_passed_blocked") throw this.failure("submit", classifyRecheckFailure(report), sideEffectState);
+    if (
+      report.setDigest !== prior.setDigest ||
+      report.bundle === null || prior.bundle === null || report.bundle.hash !== prior.bundle.hash
+    ) throw this.failure("submit", "bundle_changed", sideEffectState);
+  }
+
   private async decode<T>(operation: Operation, envelope: unknown, trustedScope: TrustedScope): Promise<Decoded<T>> {
+    return this.decodeAfterPrecheck<T>(operation, this.precheckDecode(operation, envelope, trustedScope));
+  }
+
+  /** The pure half of decode: no injected port is touched. Codes and precedence are unchanged from the original decode. */
+  private precheckDecode(operation: Operation, envelope: unknown, trustedScope: TrustedScope): PrecheckedDecode {
     this.assertRuntimeMode(operation);
     if (
       trustedScope === null || typeof trustedScope !== "object" ||
@@ -514,7 +636,12 @@ export class FulfillmentConnectorRuntime {
     for (const shape of uniqueShapes([...shapes, ...OUTPUT_SHAPES[operation], ...AUXILIARY_SHAPES[operation]])) {
       this.assertBindingAvailable(operation, shape);
     }
+    return { shapes, scopeSnapshot, envelopeSnapshot };
+  }
 
+  /** The port half of decode: `ContractValidator.validateInbound` and receipt checks. */
+  private async decodeAfterPrecheck<T>(operation: Operation, prechecked: PrecheckedDecode): Promise<Decoded<T>> {
+    const { shapes, scopeSnapshot, envelopeSnapshot } = prechecked;
     let validation;
     try {
       validation = await this.dependencies.contracts.validateInbound<T>({

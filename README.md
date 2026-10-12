@@ -12,7 +12,7 @@ Provider-neutral TypeScript runtime for TicketStub supplier quotes, order submis
 <p>
   <a href="https://github.com/Jevelopers-neatHack-2026"><img alt="TicketStub ecosystem" src="https://img.shields.io/badge/TicketStub-ecosystem-E4572E?style=flat-square&labelColor=17140F"></a>
   <a href="#status"><img alt="Status: local foundation candidate, simulated mode only" src="https://img.shields.io/badge/status-local%20foundation-B4693E?style=flat-square&labelColor=17140F"></a>
-  <a href=".node-version"><img alt="Node.js 24.15.0" src="https://img.shields.io/badge/node-24.15.0-26302A?style=flat-square&labelColor=17140F"></a>
+  <a href=".node-version"><img alt="Node.js 24.21.0" src="https://img.shields.io/badge/node-24.21.0-26302A?style=flat-square&labelColor=17140F"></a>
   <a href="package.json"><img alt="TypeScript 6.0.3" src="https://img.shields.io/badge/typescript-6.0.3-7CC6D2?style=flat-square&labelColor=17140F"></a>
 </p>
 
@@ -28,6 +28,7 @@ Implemented locally and exported from the package root:
 - **Security helpers (FC-11).** Provider-neutral helpers for scoped reference access, payload minimization, safe diagnostics, injected secret and asset ports, tombstones (with a versioned tombstone fingerprint keyring, see [key management](docs/key-management.md)) and callback hints, with synthetic policy fixtures. They are not wired to an adapter or the submit path. See [security](docs/security.md).
 - **Private fixture slices.** Offline provider matrix (FC-02, [provider matrix](docs/provider-matrix.md)), catalog normalizer (FC-03, [catalog](docs/catalog.md)), quote normalizer (FC-04, [quotes](docs/quotes.md)), local JSON attempt store (partial FC-06, [attempt store](docs/attempt-store.md)) and metering outbox (FC-10, [metering](docs/metering.md)). Their formats are private development shapes, not shared contracts.
 - **Prodigi Product Details wire decoder.** The package exports a pure private response projection and relative path helper, covered by synthetic offline fixtures. It performs no HTTP request, product selection, or orderability decision; issue 15's full acceptance still includes the supported cancellation outcome. See [Product Details](docs/prodigi-product-details.md).
+- **ProductionBundle consumer (FC-08, partial).** An offline validator over the exact owner `@jevelopers/shared-contracts` 0.9.7 byte verifier and the real print-production corpus bytes, behind a frozen critical-criteria table, plus a fail-closed `submit` gate. The best verdict is `integrity_passed_blocked`: owner byte integrity only, eligibility blocked, no approval, acceptance or authority minted. Every non-simulated `submit` is refused before any port is touched. See [ProductionBundle consumer](docs/production-bundle.md).
 - **Prodigi v4 sandbox adapter and secret-reference resolver (offline-tested only).** `ProdigiSandboxClient` maps the private quote request and a private order-create input to `POST /v4.0/quotes`, `POST /v4.0/Orders` and `GET /v4.0/orders/{id}` on `https://api.sandbox.prodigi.com/v4.0`, and projects PII-free observations. A separate owner-gated `getProductDetails` method and zero-request preflight (`scripts/prodigi-sandbox-product-read.mjs`) cover one `GET /v4.0/products/GLOBAL-PHO-4X6`; it is not executed and needs a trusted host that verifies the owner-action references. Requests are refused unless sandbox calls are explicitly enabled, an owner sandbox decision verifies and a sandbox credential resolves. `createEnvServerSecretSource` resolves the reference `prodigi/sandbox/api-key` to `PRODIGI_SANDBOX_API_KEY` at call time; live bindings are refused and there is no `PRODIGI_API_KEY` binding. No request has been sent to Prodigi. See [Prodigi sandbox](docs/prodigi-sandbox.md).
 - **Prodigi callback intake and authenticated reconciliation (offline-tested only).** Prodigi documents unsigned CloudEvents callbacks, so `ProdigiCallbackReconciler` treats a callback only as an untrusted "go look" hint. A callback must present a host-held URL capability token (resolved through the secret-reference port, with a rotation slot), carry a `com.prodigi.order.*` type and the sandbox `source`, and name an order the application tracks. The host gets a 2xx only when an authenticated read that started after the callback was received (on our own clock) has been applied, or when a pending record that owes such a read is persisted in the store and owned by a durable job. Reads are single-flight per order (callbacks that arrive during a read join the next one), with a per-order interval that coalesces bursts and a read limiter that is fair per tenant. Deferred jobs retry with jittered backoff (about 1 h with a durable scheduler), and exhaustion emits `reconcile_abandoned` at least once to a hook (required with a durable scheduler) for the poller. Workers sharing a store must be clock-synchronized within `workerClockSkewMs`. Callbacks are disabled by default and live is refused. See [Prodigi callbacks](docs/prodigi-callbacks.md).
 - **Bounded PNG byte inspection (FC-08, partial).** `inspectPngBytes` reports exact input-byte hash/length and limited facts for one static RGB8 noninterlaced PNG profile, with CRC and bounded zlib checks. Six synthetic renderer PNGs are diagnostic only and have `handoffEligible: false`; unsupported formats/profiles fail closed. This does not validate a production bundle, canonical binding, print eligibility, approval, or dispatch. See [PNG inspection](docs/png-inspection.md).
@@ -47,18 +48,18 @@ Sandbox, live and release readiness are false for every slice, and sandbox and r
 
 ## Quickstart
 
-Requires Node.js 24.15.0 ([`.node-version`](.node-version), `engines`) and npm 11.12.1 (`packageManager`). Dev dependencies are TypeScript 6.0.3 and `@types/node`; there are no runtime dependencies.
+Requires Node.js 24.21.0 ([`.node-version`](.node-version), `engines`) and npm 11.19.0 (`packageManager`). The one runtime dependency is the vendored owner package `@jevelopers/shared-contracts` 0.9.7 (`vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz`, a `file:` dependency that is imported only by the `./production-bundle` entry point, never by the package root). Dev dependencies are TypeScript 6.0.3 and `@types/node`.
 
 ```sh
 npm ci      # locked install; may need registry access
-npm test    # builds dist/ and runs all 13 local fixture suites
+npm test    # builds dist/ and runs all 16 local fixture suites
 ```
 
 No test calls a provider or another repository.
 
 ## Checks
 
-Each `verify:*` script runs `scripts/verify-fulfillment` in simulated mode against the built package, prints a JSON result and writes `result.json` to the listed (git-ignored) evidence directory. Run `npm run build` or `npm test` first. The verifier exits nonzero on any failure, including a Node version other than 24.15.0.
+Each `verify:*` script runs `scripts/verify-fulfillment` in simulated mode against the built package, prints a JSON result and writes `result.json` to the listed (git-ignored) evidence directory. Run `npm run build` or `npm test` first. The verifier exits nonzero on any failure, including a Node version other than 24.21.0.
 
 | Command | Suite | Evidence directory |
 | --- | --- | --- |
@@ -74,8 +75,10 @@ Each `verify:*` script runs `scripts/verify-fulfillment` in simulated mode again
 | `npm run verify:comparison` | Quote comparison (FC-09, partial) | `evidence/FC-09-COMPARISON` |
 | `npm run verify:prodigi-product-details` | Private Product Details wire fixtures | `evidence/FC-PRODIGI-PRODUCT-DETAILS` |
 | `npm run verify:png-inspection` | Bounded private PNG byte-observation fixtures (FC-08, partial) | `evidence/FC-08-10-PNG` |
+| `npm run verify:order-authorization` | Simulated order-authorization consumer and dispatch revalidation | `evidence/FC-ORDER-AUTH` |
+| `npm run verify:package` | ProductionBundle consumer over the owner package and the real corpus bytes (FC-08, partial: owner integrity only, critical criteria blocked) | `evidence/FC-08` |
 
-Single suites: `npm run test:catalog` (needs an existing build); `test:quote`, `test:attempt-store`, `test:status`, `test:comparison`, `test:prodigi-product-details`, `test:png-inspection`, `test:prodigi-sandbox` and `test:prodigi-callbacks` build first. The owner-gated `scripts/prodigi-sandbox-smoke.mjs` and the execute mode of `scripts/prodigi-sandbox-product-read.mjs` are never run by tests or CI (the latter's preflight is spawned by the sandbox suite with an empty environment) ([Prodigi sandbox](docs/prodigi-sandbox.md#not-done-needs-owner-approval)). `--suite sandbox` and `--suite release` always fail until an adapter, accepted pins and conformance evidence exist. The [`foundation-ci`](.github/workflows/ci.yml) workflow runs the pinned toolchain check, `npm ci`, `npm test` and all 12 `verify:*` commands with read-only permissions and no secrets. The PNG wrapper writes only its fixed git-ignored `evidence/FC-08-10-PNG/result.json` path and rejects a substituted or symlinked evidence location. Result fields and blockers: [runtime](docs/runtime.md#runtime-and-commands).
+Single suites: `npm run test:catalog` (needs an existing build); `test:quote`, `test:attempt-store`, `test:status`, `test:comparison`, `test:prodigi-product-details`, `test:png-inspection`, `test:package`, `test:prodigi-sandbox` and `test:prodigi-callbacks` build first. The owner-gated `scripts/prodigi-sandbox-smoke.mjs` and the execute mode of `scripts/prodigi-sandbox-product-read.mjs` are never run by tests or CI (the latter's preflight is spawned by the sandbox suite with an empty environment) ([Prodigi sandbox](docs/prodigi-sandbox.md#not-done-needs-owner-approval)). `--suite sandbox` and `--suite release` always fail until an adapter, accepted pins and conformance evidence exist. The [`foundation-ci`](.github/workflows/ci.yml) workflow runs the pinned toolchain check, `npm ci`, `npm test` the owner-package pre-check and all 14 `verify:*` commands with read-only permissions and no secrets. The PNG wrapper writes only its fixed git-ignored `evidence/FC-08-10-PNG/result.json` path and rejects a substituted or symlinked evidence location; the `package` wrapper does the same for `evidence/FC-08`. Result fields and blockers: [runtime](docs/runtime.md#runtime-and-commands).
 
 ## Docs
 
@@ -90,6 +93,7 @@ Single suites: `npm run test:catalog` (needs an existing build); `test:quote`, `
 | [Prodigi sandbox](docs/prodigi-sandbox.md) | Prodigi v4 sandbox adapter, secret references, gates and pending owner steps |
 | [Prodigi callbacks](docs/prodigi-callbacks.md) | Prodigi callback trust model, replay and ordering rules, polling reconciliation |
 | [Product Details](docs/prodigi-product-details.md) | Prodigi private wire fields, decoder behavior and evidence limits |
+| [ProductionBundle consumer](docs/production-bundle.md) | FC-08 offline validator over the exact owner package, the fail-closed `submit` gate, criteria, limits and what stays blocked |
 | [Ownership](docs/architecture/OWNERSHIP.md) · [Acceptance view](docs/architecture/ACCEPTANCE.md) | Repository responsibilities and selected master criteria |
 
 Architecture: [architecture kit v1.0](https://github.com/Jevelopers-neatHack-2026/getticketstub.com/blob/main/docs/architecture-kit/v1.0/README.md) and the [central implementation plan](https://github.com/Jevelopers-neatHack-2026/getticketstub.com/blob/main/docs/planning/implementation-plan.md). They describe intended boundaries; they do not establish completed product functionality, passing implementation tests, connected sponsor tools or live financial activity.

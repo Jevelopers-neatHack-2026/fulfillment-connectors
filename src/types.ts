@@ -6,6 +6,8 @@
  * through an injected ContractValidator.
  */
 
+import type { ProductionBundleEvidence, ProductionBundleGate } from "./production-bundle-contract.js";
+
 export type ProviderMode = "simulated" | "sandbox";
 export type Operation =
   | "discover_capabilities"
@@ -464,6 +466,11 @@ export interface RuntimeDependencies {
   readonly usageSink: UsageSink;
   /** Billable operations fail closed when no durable metering recorder is configured. */
   readonly metering?: RuntimeMeteringResolver;
+  /**
+   * The ProductionBundle gate (FC-08). Only an object created by `createProductionBundleGate` is accepted. Once the
+   * `production_bundle` contract binding is `accepted`, a missing gate fails `contract_missing`.
+   */
+  readonly productionBundleGate?: ProductionBundleGate;
 }
 
 export interface RuntimeOptions {
@@ -478,6 +485,8 @@ export interface ConnectorResponse<T> {
   readonly value: T;
   readonly sharedPayload: unknown;
   readonly emittedShapes: readonly SharedShape[];
+  /** Present only on a `submit` that passed the ProductionBundle gate. It can only say "blocked". */
+  readonly productionBundleEvidence?: ProductionBundleEvidence;
 }
 
 export interface ContractReadiness {

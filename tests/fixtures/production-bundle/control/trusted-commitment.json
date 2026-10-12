@@ -1,0 +1,191 @@
+{
+  "contract": "ProductionBundleRef",
+  "schema_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "bundle_ref": {
+    "contract": "ProductionBundle",
+    "schema_version": "2.0.0",
+    "id": "a66be59e-f7d2-4c44-a6c4-212a5e1ac05c",
+    "revision": 1,
+    "content_hash": "sha256:ca9c78c3ac7823ea2b81b395a6f91acae2abe0b347f65bcf0ff067dce7993ea4"
+  },
+  "file_set": [
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "e77654e3-4ff0-4bf1-97d4-bc2af8477e33",
+      "filename": "output.svg",
+      "role": "print_output",
+      "byte_hash": "sha256:5c3d8fae4fdf853fd2305fd85f6cf32c3bec9b013885548b607a308120b0860b",
+      "byte_size": 766686,
+      "media_type": "image/svg+xml",
+      "geometry": {
+        "width_nm": "101600000",
+        "height_nm": "50800000",
+        "width_px": null,
+        "height_px": null,
+        "effective_dpi": null
+      },
+      "profile_ref": null,
+      "characteristics": {
+        "raster_artwork": true,
+        "text": "embedded",
+        "vector_content": true,
+        "alpha": false
+      },
+      "semantic_hash": "sha256:ebfe230ede28b2e614a03396bd6edf6ae618652ea53acb5279f071986c18f1ba"
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "8648940d-b653-400a-8ba8-5922bfaeab7c",
+      "filename": "output.png",
+      "role": "print_output",
+      "byte_hash": "sha256:defcb346e95d7efaed4b73b8c35ab8feeabf109f901aa6f96b6845774e8f97eb",
+      "byte_size": 27833,
+      "media_type": "image/png",
+      "geometry": {
+        "width_nm": "101600000",
+        "height_nm": "50800000",
+        "width_px": 1200,
+        "height_px": 600,
+        "effective_dpi": 300
+      },
+      "profile_ref": null,
+      "characteristics": {
+        "raster_artwork": true,
+        "text": "rasterized",
+        "vector_content": false,
+        "alpha": false
+      },
+      "semantic_hash": "sha256:8cf4fbf60a52dab636898bd12b058045e37a93ffa40294ba16cf103ab406fe20"
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "99757a83-2686-41f4-9d24-7fada91c9e37",
+      "filename": "output.pdf",
+      "role": "print_output",
+      "byte_hash": "sha256:e6a211c18afbe826a5228214ada746d7b394b540cf942150b77fcfa1e7ae7ca9",
+      "byte_size": 22610,
+      "media_type": "application/pdf",
+      "geometry": {
+        "width_nm": "101600000",
+        "height_nm": "50800000",
+        "width_px": null,
+        "height_px": null,
+        "effective_dpi": null
+      },
+      "profile_ref": null,
+      "characteristics": {
+        "raster_artwork": true,
+        "text": "embedded",
+        "vector_content": true,
+        "alpha": false
+      },
+      "semantic_hash": "sha256:9392a5ab144371af7da1a266aa1eea7202d37cae76dd3712fdfc60bcae3f0307"
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "33bc531e-5da7-494a-92c8-bc22fb70b1fc",
+      "filename": "preflight.json",
+      "role": "preflight_report",
+      "byte_hash": "sha256:e02757ffc40c40b2a07cd816db771fc7cf706325eb3ddb57bb9db1297f0fe44b",
+      "byte_size": 7419,
+      "media_type": "application/json",
+      "geometry": null,
+      "profile_ref": null,
+      "characteristics": null,
+      "semantic_hash": "sha256:c6009247e0b1dfc6579be683186eb8b55ef05e835ce907dbf2e45975b29b5448"
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "c08515f1-c71a-4234-8ecf-49e46354d623",
+      "filename": "lineage.json",
+      "role": "lineage",
+      "byte_hash": "sha256:b3010c35095a4af3cd7820d1790d79e14d226a2060f24e52deffd396bc33f5b7",
+      "byte_size": 13886,
+      "media_type": "application/json",
+      "geometry": null,
+      "profile_ref": null,
+      "characteristics": null,
+      "semantic_hash": null
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "b0f52a3a-66c1-4278-84e7-68b848a55fdc",
+      "filename": "manifest.json",
+      "role": "manifest",
+      "byte_hash": "sha256:e5c210dbe69436e68467ebbf581b9a716022b3e33a3776c7b231d1ff12363b3d",
+      "byte_size": 7357,
+      "media_type": "application/json",
+      "geometry": null,
+      "profile_ref": null,
+      "characteristics": null,
+      "semantic_hash": null
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "97abaee3-27dc-4faf-a5fc-9a8b30c0550e",
+      "filename": "archive.zip",
+      "role": "archive",
+      "byte_hash": "sha256:e0cb794adf898dd34b67068c0e3521758931169a6b208499781f9d39c12b1a87",
+      "byte_size": 846407,
+      "media_type": "application/zip",
+      "geometry": null,
+      "profile_ref": null,
+      "characteristics": null,
+      "semantic_hash": null
+    },
+    {
+      "contract": "ArtifactFile",
+      "schema_version": "2.0.0",
+      "policy_version": "1.0.0",
+      "artifact_id": "cff41cde-0969-4168-a43f-328c1eaa9876",
+      "filename": "detached.json",
+      "role": "detached",
+      "byte_hash": "sha256:1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86",
+      "byte_size": 1286,
+      "media_type": "application/json",
+      "geometry": null,
+      "profile_ref": null,
+      "characteristics": null,
+      "semantic_hash": null
+    }
+  ],
+  "detached_ref": {
+    "contract": "ProductionBundleDetached",
+    "schema_version": "1.0.0",
+    "id": "cff41cde-0969-4168-a43f-328c1eaa9876",
+    "revision": 1,
+    "content_hash": "sha256:1fe1d3070deed2b8695301a3af853c32df2f89ca67e8c40c330d2966bab94f86"
+  },
+  "row_scope": null,
+  "composition_ref": {
+    "contract": "Composition",
+    "schema_version": "1.0.0",
+    "id": "123e4567-e89b-42d3-a456-00000000003d",
+    "revision": 1,
+    "content_hash": "sha256:6e9d5d187328082b08f9d338a6d3fe1d94ccebe8c6a3ff610aa5ba3e9b140e4d"
+  },
+  "eligibility": {
+    "state": "blocked",
+    "reason_codes": [
+      "OWNER_ACCEPTANCE_PENDING"
+    ],
+    "checked_at": "2026-10-10T12:05:00.000Z",
+    "evidence_mode": "offline",
+    "handoff_eligible": false
+  }
+}

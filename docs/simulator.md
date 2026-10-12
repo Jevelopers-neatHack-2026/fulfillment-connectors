@@ -6,7 +6,7 @@ The simulator is not a selected supplier adapter, sandbox receipt, authorization
 
 ## Run the local suite
 
-With the pinned Node 24.15.0 and npm 11.12.1 toolchain and locked dependencies installed:
+With the pinned Node 24.21.0 and npm 11.19.0 toolchain and locked dependencies installed:
 
 ```sh
 npm run build
@@ -15,7 +15,7 @@ npm run verify:mock
 
 `npm run verify:mock` writes machine-readable local evidence under `evidence/FC-02-MOCK`. The suite uses the real `FulfillmentConnectorRuntime` and `createRuntimeMeteringResolver`; the resolver opens the repository's `FulfillmentMetering` against an isolated temporary `DurableJsonStore` and reopens it to test pending outbox replay after a simulated restart. A pre-dispatch sink failure leaves the simulator untouched, and a post-dispatch sink failure can be recovered without submitting a second order.
 
-The contract validator, authorization verifier, `AttemptPersistence`, budget client, and usage sink remain synthetic development fixtures. The simulator itself does not use the development-only TicketStub order-authorization consumer in [docs/order-authorization.md](order-authorization.md), which is exercised separately by `npm run verify:order-authorization` against a fake issuer. Only the local metering implementation and JSON outbox are exercised; runtime attempt persistence and finance/authorization authority are not replaced by that store. Nothing changes the canonical schema catalog or represents these private ports as accepted production integrations. Simulator/provider fixture state and the runtime test store are JSON serializable; restart cases copy those fixtures through JSON before creating another runtime and simulator instance.
+A ProductionBundle reference object (`contract: "ProductionBundle"`, `schema_version: "2.0.0"`, `id`, `revision`, an exact `sha256:` `content_hash`) passed as the quote or preflight `productionBundle` digests to its owner `content_hash`, so the simulated quote, the submit body and the authorization facts carry the owner bundle hash (FC-08). This applies only in simulated mode; every other value keeps its existing fixture digest. The contract validator, authorization verifier, `AttemptPersistence`, budget client, and usage sink remain synthetic development fixtures. The simulator itself does not use the development-only TicketStub order-authorization consumer in [docs/order-authorization.md](order-authorization.md), which is exercised separately by `npm run verify:order-authorization` against a fake issuer. Only the local metering implementation and JSON outbox are exercised; runtime attempt persistence and finance/authorization authority are not replaced by that store. Nothing changes the canonical schema catalog or represents these private ports as accepted production integrations. Simulator/provider fixture state and the runtime test store are JSON serializable; restart cases copy those fixtures through JSON before creating another runtime and simulator instance.
 
 The simulator's local provider facts use `billing_mode: simulated`; no charge is recorded and the test does not authorize or reserve real funds. Test values and IDs are synthetic, and generated metering IDs are not used as provider or finance receipts.
 

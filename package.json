@@ -5,19 +5,24 @@
   "type": "module",
   "description": "Typed worker runtime foundation for fulfillment provider adapters",
   "engines": {
-    "node": "24.15.0"
+    "node": "24.21.0"
   },
-  "packageManager": "npm@11.12.1",
+  "packageManager": "npm@11.19.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./production-bundle": {
+      "types": "./dist/production-bundle.d.ts",
+      "import": "./dist/production-bundle.js"
     }
   },
   "files": [
     "dist",
+    "vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz",
     "README.md",
     "docs/runtime.md",
     "docs/provider-matrix.md",
@@ -31,11 +36,12 @@
     "docs/png-inspection.md",
     "docs/prodigi-sandbox.md",
     "docs/prodigi-callbacks.md",
-    "docs/order-authorization.md"
+    "docs/order-authorization.md",
+    "docs/production-bundle.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node scripts/run-contract-tests.mjs && node scripts/run-provider-matrix-tests.mjs && node scripts/run-metering-tests.mjs && node scripts/run-security-tests.mjs && node scripts/run-catalog-tests.mjs && node scripts/run-mock-tests.mjs && node scripts/run-quote-tests.mjs && node scripts/run-attempt-store-tests.mjs && node scripts/run-comparison-tests.mjs && node scripts/run-status-tests.mjs && node scripts/run-prodigi-product-details-tests.mjs && node scripts/run-png-inspection-tests.mjs && node scripts/run-prodigi-sandbox-tests.mjs && node scripts/run-prodigi-callback-tests.mjs && node scripts/run-order-authorization-tests.mjs",
+    "test": "npm run build && node scripts/run-contract-tests.mjs && node scripts/run-provider-matrix-tests.mjs && node scripts/run-metering-tests.mjs && node scripts/run-security-tests.mjs && node scripts/run-catalog-tests.mjs && node scripts/run-mock-tests.mjs && node scripts/run-quote-tests.mjs && node scripts/run-attempt-store-tests.mjs && node scripts/run-comparison-tests.mjs && node scripts/run-status-tests.mjs && node scripts/run-prodigi-product-details-tests.mjs && node scripts/run-png-inspection-tests.mjs && node scripts/run-prodigi-sandbox-tests.mjs && node scripts/run-prodigi-callback-tests.mjs && node scripts/run-order-authorization-tests.mjs && node scripts/run-package-tests.mjs",
     "test:catalog": "node scripts/run-catalog-tests.mjs",
     "test:quote": "npm run build && node scripts/run-quote-tests.mjs",
     "test:attempt-store": "npm run build && node scripts/run-attempt-store-tests.mjs",
@@ -46,6 +52,7 @@
     "test:prodigi-sandbox": "npm run build && node scripts/run-prodigi-sandbox-tests.mjs",
     "test:prodigi-callbacks": "npm run build && node scripts/run-prodigi-callback-tests.mjs",
     "test:order-authorization": "npm run build && node scripts/run-order-authorization-tests.mjs",
+    "test:package": "npm run build && node scripts/run-package-tests.mjs",
     "verify:contract": "./scripts/verify-fulfillment --suite contract --mode simulated --evidence-dir evidence/FC-01",
     "verify:provider-matrix": "./scripts/verify-fulfillment --suite provider-matrix --mode simulated --evidence-dir evidence/FC-02",
     "verify:security": "./scripts/verify-fulfillment --suite security --mode simulated --evidence-dir evidence/FC-11",
@@ -58,7 +65,11 @@
     "verify:status": "./scripts/verify-fulfillment --suite status --mode simulated --evidence-dir evidence/FC-07-STATUS",
     "verify:prodigi-product-details": "./scripts/verify-fulfillment --suite prodigi-product-details --mode simulated --evidence-dir evidence/FC-PRODIGI-PRODUCT-DETAILS",
     "verify:png-inspection": "./scripts/verify-fulfillment --suite png-inspection --mode simulated --evidence-dir evidence/FC-08-10-PNG",
-    "verify:order-authorization": "./scripts/verify-fulfillment --suite order-authorization --mode simulated --evidence-dir evidence/FC-ORDER-AUTH"
+    "verify:order-authorization": "./scripts/verify-fulfillment --suite order-authorization --mode simulated --evidence-dir evidence/FC-ORDER-AUTH",
+    "verify:package": "./scripts/verify-fulfillment --suite package --mode simulated --evidence-dir evidence/FC-08"
+  },
+  "dependencies": {
+    "@jevelopers/shared-contracts": "file:vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
