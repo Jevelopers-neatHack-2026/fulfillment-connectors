@@ -516,7 +516,7 @@ function trustedHostInterface() {
     method: "verifyProductReadGrant(request)",
     request: Object.keys(buildGrantRequest({ "decision-reference": "<ref>", "owner-permission-reference": "<ref>", "account-terms-reference": "<ref>", "request-cost-budget-reference": "<ref>", "receipt-path": "<path>", "source-revision": "<40 hex>", "owner-packet-sha256": "<64 hex>" }, "<64 hex>")),
     mustCheck: "the sourceRevision, builtArtifactSha256 and ownerPacketSha256 against what the owner actually approved, and refuse (return undefined) when any differs",
-    mustReturn: "the request echoed with ownerPermissionVerified, accountTermsAccepted, requestCostBudgetApproved and singleUse all true and an unexpired expiresAt",
+    mustReturn: "the request echoed, with ownerPermissionVerified, accountTermsAccepted, requestCostBudgetApproved and singleUse all true, an unexpired expiresAt, and approvedSourceRevision, approvedBuiltArtifactSha256 and approvedOwnerPacketSha256 stated from the host's OWN trusted context (not copied from the request); an echo-only answer is rejected",
     mustResolveWith: ["the owner's permission naming this one request", "the sandbox account terms the owner actually accepted", "the per-request cost budget"],
     notAuthority: ["a reference that merely exists", "an operator attestation boolean", "the presence of an API key"]
   };

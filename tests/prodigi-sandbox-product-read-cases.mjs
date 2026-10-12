@@ -204,6 +204,12 @@ export function registerProductReadCases(add) {
       ["wrong receipt binding", (grant) => ({ ...grant, receiptBinding: `sha256:${"b".repeat(64)}` })],
       ["wrong decision reference", (grant) => ({ ...grant, decisionReference: "decision:other" })],
       ["two requests allowed", (grant) => ({ ...grant, maxProviderRequests: 2 })],
+      ["host never states the approved digest (echo-only host)", (grant) => { const { approvedBuiltArtifactSha256, ...rest } = grant; void approvedBuiltArtifactSha256; return rest; }],
+      ["host never states the approved revision", (grant) => { const { approvedSourceRevision, ...rest } = grant; void approvedSourceRevision; return rest; }],
+      ["host never states the approved owner packet", (grant) => { const { approvedOwnerPacketSha256, ...rest } = grant; void approvedOwnerPacketSha256; return rest; }],
+      ["approved digest differs from the candidate", (grant) => ({ ...grant, approvedBuiltArtifactSha256: "e".repeat(64) })],
+      ["approved revision differs from the candidate", (grant) => ({ ...grant, approvedSourceRevision: "f".repeat(40) })],
+      ["approved owner packet differs from the candidate", (grant) => ({ ...grant, approvedOwnerPacketSha256: "b".repeat(64) })],
       ["retries allowed", (grant) => ({ ...grant, maxRetries: 1 })],
       ["permission not verified", (grant) => ({ ...grant, ownerPermissionVerified: false })],
       ["terms not accepted", (grant) => ({ ...grant, accountTermsAccepted: "yes" })],
@@ -762,6 +768,7 @@ export function registerProductReadCases(add) {
       events?.push("host.verify");
       const grant = {
         ...request, ownerPermissionVerified: true, accountTermsAccepted: true, requestCostBudgetApproved: true, singleUse: true,
+        approvedSourceRevision: request.sourceRevision, approvedBuiltArtifactSha256: request.builtArtifactSha256, approvedOwnerPacketSha256: request.ownerPacketSha256,
         expiresAt: new Date(Date.now() + 3_600_000).toISOString()
       };
       return answer === undefined ? grant : answer(grant);
@@ -1251,7 +1258,9 @@ export function registerProductReadCases(add) {
       calls.push(request);
       if (during !== undefined) await during(request);
       if (request.builtArtifactSha256 !== approvedDigest || request.sourceRevision !== REVISION || request.ownerPacketSha256 !== PACKET_SHA) return undefined;
-      return { ...request, ownerPermissionVerified: true, accountTermsAccepted: true, requestCostBudgetApproved: true, singleUse: true, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+      // The approved values come from the host's own context (here the closed-over reviewed digest), not from the request.
+      return { ...request, ownerPermissionVerified: true, accountTermsAccepted: true, requestCostBudgetApproved: true, singleUse: true,
+        approvedSourceRevision: REVISION, approvedBuiltArtifactSha256: approvedDigest, approvedOwnerPacketSha256: PACKET_SHA, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
     }
   });
   const candidateDigest = async (tree) => {
@@ -1421,6 +1430,8 @@ export function registerProductReadCases(add) {
       ["missing flag", (grant) => { const { singleUse, ...rest } = grant; void singleUse; return rest; }],
       ["flag not exactly true", (grant) => ({ ...grant, accountTermsAccepted: "yes" })],
       ["wrong built artifact digest echoed", (grant) => ({ ...grant, builtArtifactSha256: "e".repeat(64) })],
+      ["host that only echoes the request (no approved values)", (grant) => { const { approvedSourceRevision, approvedBuiltArtifactSha256, approvedOwnerPacketSha256, ...rest } = grant; void [approvedSourceRevision, approvedBuiltArtifactSha256, approvedOwnerPacketSha256]; return rest; }],
+      ["approved digest differs from the candidate", (grant) => ({ ...grant, approvedBuiltArtifactSha256: "e".repeat(64) })],
       ["wrong source revision echoed", (grant) => ({ ...grant, sourceRevision: "f".repeat(40) })],
       ["wrong owner packet echoed", (grant) => ({ ...grant, ownerPacketSha256: "b".repeat(64) })],
       ["accessor field", (grant) => Object.defineProperty({ ...grant }, "singleUse", { enumerable: true, get: () => true })],

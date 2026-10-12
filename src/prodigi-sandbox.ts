@@ -135,6 +135,14 @@ export interface VerifiedSandboxProductReadGrant extends SandboxProductReadGrant
   readonly accountTermsAccepted: true;
   readonly requestCostBudgetApproved: true;
   readonly singleUse: true;
+  /**
+   * The values the owner actually approved, stated by the host from its own trusted context (the approved owner
+   * packet), NOT copied from the request by the library. A grant is accepted only when each equals the candidate the
+   * run presented, so a host that merely echoes the request, or never looked at the digest, cannot approve it.
+   */
+  readonly approvedSourceRevision: string;
+  readonly approvedBuiltArtifactSha256: string;
+  readonly approvedOwnerPacketSha256: string;
   /** ISO-8601 UTC time after which the grant is void. */
   readonly expiresAt: string;
 }
@@ -1048,9 +1056,13 @@ export function isVerifiedSandboxProductReadGrant(request: SandboxProductReadGra
   const grant = plainDataRecord(raw);
   if (grant === undefined) return false;
   const requestKeys = Object.keys(request) as (keyof SandboxProductReadGrantRequest)[];
-  const allowed = new Set<string>([...requestKeys, "ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse", "expiresAt"]);
+  const allowed = new Set<string>([...requestKeys, "ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse",
+    "approvedSourceRevision", "approvedBuiltArtifactSha256", "approvedOwnerPacketSha256", "expiresAt"]);
   if (Object.keys(grant).some((key) => !allowed.has(key))) return false;
   for (const key of requestKeys) if (grant[key] !== request[key]) return false;
+  // The host's own statement of what was approved must equal what this run would execute.
+  if (grant.approvedSourceRevision !== request.sourceRevision || grant.approvedBuiltArtifactSha256 !== request.builtArtifactSha256 ||
+      grant.approvedOwnerPacketSha256 !== request.ownerPacketSha256) return false;
   if (grant.ownerPermissionVerified !== true || grant.accountTermsAccepted !== true ||
       grant.requestCostBudgetApproved !== true || grant.singleUse !== true) return false;
   const expiresAt = grant.expiresAt;

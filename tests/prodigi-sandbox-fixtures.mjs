@@ -228,6 +228,9 @@ export function fixtureGrantVerifier({ calls, answer, now = Date.now() } = {}) {
         accountTermsAccepted: true,
         requestCostBudgetApproved: true,
         singleUse: true,
+        approvedSourceRevision: request.sourceRevision,
+        approvedBuiltArtifactSha256: request.builtArtifactSha256,
+        approvedOwnerPacketSha256: request.ownerPacketSha256,
         expiresAt: new Date(now + 3_600_000).toISOString()
       };
       return answer === undefined ? grant : answer(grant);
