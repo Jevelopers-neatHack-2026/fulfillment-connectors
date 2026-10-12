@@ -1287,7 +1287,8 @@ export function registerProductReadCases(add) {
     assert.match(approved, /^[a-f0-9]{64}$/u);
     // Every change to what would run changes the digest, so the careful host refuses and nothing is sent, read or created.
     const tampers = [
-      ["fetch port retargeted (reviewer R45-01 repro)", (t) => alter(path.join(t.dist, "provider-matrix.js"), "/v4.0/products/GLOBAL-PHO-4X6", "/v4.0/products/GLOBAL-CAN-10x10")],
+      ["fetch port retargeted to another SKU (reviewer R45-01 repro)", (t) => alter(path.join(t.dist, "prodigi-sandbox.js"), "fetchImpl(PRODIGI_SANDBOX_PRODUCT_READ_URL, {", "fetchImpl(\"https://api.sandbox.prodigi.com/v4.0/products/GLOBAL-CAN-10x10\", {")],
+      ["path constant retargeted", (t) => alter(path.join(t.dist, "provider-matrix.js"), "/v4.0/products/GLOBAL-PHO-4X6", "/v4.0/products/GLOBAL-CAN-10x10")],
       ["one byte in another module", (t) => alter(path.join(t.dist, "prodigi-secrets.js"), "export const", "export  const")],
       ["extra module file", (t) => fs.writeFileSync(path.join(t.dist, "unrelated.js"), "export const injected = true;\n")],
       ["extra declaration file", (t) => fs.writeFileSync(path.join(t.dist, "unrelated.d.ts"), "export {};\n")],
@@ -1320,10 +1321,10 @@ export function registerProductReadCases(add) {
       let retargeted = 0;
       const { result, fetcher } = await execute(tree.out, {
         run: module.runProductRead,
-        host: approvingHost(approved, { during: () => { if (retargeted === 0) { retargeted += 1; alter(path.join(tree.dist, "provider-matrix.js"), "/v4.0/products/GLOBAL-PHO-4X6", "/v4.0/products/GLOBAL-CAN-10x10"); } } })
+        host: approvingHost(approved, { during: () => { if (retargeted === 0) { retargeted += 1; alter(path.join(tree.dist, "prodigi-sandbox.js"), "fetchImpl(PRODIGI_SANDBOX_PRODUCT_READ_URL, {", "fetchImpl(\"https://api.sandbox.prodigi.com/v4.0/products/GLOBAL-CAN-10x10\", {"); } } })
       });
       assert.equal(retargeted, 1);
-      assert.match(fs.readFileSync(path.join(tree.dist, "provider-matrix.js"), "utf8"), /GLOBAL-CAN-10x10/u, "the file on disk really was retargeted");
+      assert.match(fs.readFileSync(path.join(tree.dist, "prodigi-sandbox.js"), "utf8"), /GLOBAL-CAN-10x10/u, "the file on disk really was retargeted, and would have fetched that SKU");
       assert.equal(result.exitCode, 0);
       assert.equal(fetcher.calls.length, 1);
       assert.equal(fetcher.calls[0].url, PRODUCT_READ_URL, "the request still goes to the hashed code's URL");
@@ -1379,6 +1380,7 @@ export function registerProductReadCases(add) {
       ["entry module missing", (t) => fs.unlinkSync(path.join(t.dist, "index.js")), "built_artifact_entry_missing"],
       ["dist missing", (t) => fs.rmSync(t.dist, { recursive: true }), "built_artifact_missing"],
       ["hidden file name", (t) => fs.writeFileSync(path.join(t.dist, ".hidden.js"), "export {};\n"), "built_artifact_unsafe_name"],
+      ["prototype-looking name", (t) => fs.writeFileSync(path.join(t.dist, "__proto__.js"), "export {};\n"), "built_artifact_unsafe_name"],
       ["name with a space", (t) => fs.writeFileSync(path.join(t.dist, "a b.js"), "export {};\n"), "built_artifact_unsafe_name"],
       ["too deep", (t) => { let d = t.dist; for (const n of ["a", "b", "c", "d", "e"]) { d = path.join(d, n); fs.mkdirSync(d); } fs.writeFileSync(path.join(d, "x.js"), "export {};\n"); }, "built_artifact_too_deep"],
       ["too many files", (t) => { for (let i = 0; i < 260; i += 1) fs.writeFileSync(path.join(t.dist, `extra${i}.js`), "export {};\n"); }, "built_artifact_too_large"],
