@@ -41,10 +41,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node scripts/run-contract-tests.mjs && node scripts/run-provider-matrix-tests.mjs && node scripts/run-metering-tests.mjs && node scripts/run-security-tests.mjs && node scripts/run-catalog-tests.mjs && node scripts/run-mock-tests.mjs && node scripts/run-quote-tests.mjs && node scripts/run-attempt-store-tests.mjs && node scripts/run-comparison-tests.mjs && node scripts/run-status-tests.mjs && node scripts/run-prodigi-product-details-tests.mjs && node scripts/run-png-inspection-tests.mjs && node scripts/run-prodigi-sandbox-tests.mjs && node scripts/run-prodigi-callback-tests.mjs && node scripts/run-order-authorization-tests.mjs && node scripts/run-package-tests.mjs",
+    "test": "npm run build && npm run test:fixture-retry && node scripts/run-contract-tests.mjs && node scripts/run-provider-matrix-tests.mjs && node scripts/run-metering-tests.mjs && node scripts/run-security-tests.mjs && node scripts/run-catalog-tests.mjs && node scripts/run-mock-tests.mjs && node scripts/run-quote-tests.mjs && node scripts/run-attempt-store-tests.mjs && node scripts/run-comparison-tests.mjs && node scripts/run-status-tests.mjs && node scripts/run-prodigi-product-details-tests.mjs && node scripts/run-png-inspection-tests.mjs && node scripts/run-prodigi-sandbox-tests.mjs && node scripts/run-prodigi-callback-tests.mjs && node scripts/run-order-authorization-tests.mjs && node scripts/run-package-tests.mjs",
+    "test:fixture-retry": "node --test tests/fixture-claim-retry.test.mjs",
     "test:catalog": "node scripts/run-catalog-tests.mjs",
     "test:quote": "npm run build && node scripts/run-quote-tests.mjs",
-    "test:attempt-store": "npm run build && node scripts/run-attempt-store-tests.mjs",
+    "test:attempt-store": "npm run build && npm run test:fixture-retry && node scripts/run-attempt-store-tests.mjs",
     "test:comparison": "npm run build && node scripts/run-comparison-tests.mjs",
     "test:status": "npm run build && node scripts/run-status-tests.mjs",
     "test:prodigi-product-details": "npm run build && node scripts/run-prodigi-product-details-tests.mjs",
