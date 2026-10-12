@@ -206,6 +206,7 @@ export {
   createOneShotProdigiProductReadPort,
   createProdigiProductReadFetchPort,
   createProdigiQuotePort,
+  isVerifiedSandboxProductReadGrant,
   mapOrderRequest,
   mapQuoteRequest,
   PRODIGI_SANDBOX_ORIGIN,

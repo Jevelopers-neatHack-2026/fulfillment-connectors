@@ -207,7 +207,10 @@ export const PRODUCT_READ_REFERENCES = Object.freeze({
   ownerPermissionReference: "owner-permission:fixture-1",
   accountTermsReference: "account-terms:fixture-1",
   requestCostBudgetReference: "cost-budget:fixture-1",
-  receiptBinding: `sha256:${"a".repeat(64)}`
+  receiptBinding: `sha256:${"a".repeat(64)}`,
+  sourceRevision: "1234567890abcdef1234567890abcdef12345678",
+  builtArtifactSha256: "d".repeat(64),
+  ownerPacketSha256: "c".repeat(64)
 });
 
 /**

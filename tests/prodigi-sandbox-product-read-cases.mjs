@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createEnvServerSecretSource,
   createOneShotProdigiProductReadPort,
@@ -79,6 +79,9 @@ async function rejectsWith(promise, code, sideEffectState, httpStatus) {
 function goodRequest(signal = new AbortController().signal) {
   return { method: "GET", url: PRODUCT_READ_URL, headers: { "X-API-Key": FIXTURE_SANDBOX_KEY, Accept: "application/json" }, signal };
 }
+
+// Execute mode reads NODE_OPTIONS (a name, not a secret) before anything else; the key itself is the only other name.
+const withoutNodeOptions = (log) => log.filter((entry) => entry !== "get:NODE_OPTIONS");
 
 function countTimers() {
   return process.getActiveResourcesInfo().filter((name) => name === "Timeout").length;
@@ -590,9 +593,10 @@ export function registerProductReadCases(add) {
     assert.equal(report.requestCost, "UNKNOWN");
     assert.deepEqual([report.externalProviderCalls, report.credentialReads, report.networkRequests], [0, 0, 0]);
     assert.deepEqual(report.compiledSelection, { sku: "GLOBAL-PHO-4X6", destinationCountryCode: "US", shippingMethod: "Standard" });
+    // The spawned child carries the suite's own --import network guard, which the preload gate rightly flags.
     assert.deepEqual(report.missingGates.sort(), [
-      "account_terms_reference", "decision_reference", "owner_packet_sha256", "owner_permission_reference", "receipt_path_outside_git",
-      "request_cost_budget_reference", "source_revision_immutable", "trusted_host_grant_verifier"
+      "account_terms_reference", "built_artifact_approved_by_trusted_host", "decision_reference", "no_untrusted_preload", "owner_packet_sha256", "owner_permission_reference",
+      "receipt_path_outside_git", "request_cost_budget_reference", "source_revision_immutable", "trusted_host_grant_verifier"
     ]);
     const plan = report.requestPlan;
     assert.equal(plan.method, "GET");
@@ -606,10 +610,14 @@ export function registerProductReadCases(add) {
     assert.equal(states.trusted_host_grant_verifier, "unavailable");
     // What the command line cannot establish is listed apart from the gates and never reads as verified.
     assert.deepEqual(report.unverifiedAssertions.map((entry) => [entry.id, entry.state]), [
-      ["built_artifact_matches_source", "unverified"], ["compiled_tuple_verified_by_authority", "not_verified_operator_attestation_only"],
+      ["built_artifact_reviewed", "approval_pending"], ["compiled_tuple_verified_by_authority", "not_verified_operator_attestation_only"],
       ["account_access", "not_asserted"], ["request_cost", "UNKNOWN"], ["customer_authority", "none"]
     ]);
-    assert.equal(report.gates.some((entry) => entry.id.includes("built_artifact") || entry.id.includes("compiled_tuple")), false);
+    assert.equal(report.gates.some((entry) => entry.id.includes("compiled_tuple")), false);
+    assert.equal(report.builtArtifact.state, "approval_pending");
+    assert.match(report.builtArtifact.candidateSha256, /^[a-f0-9]{64}$/u);
+    assert.equal(states.built_artifact_inventory, "satisfied");
+    assert.equal(states.built_artifact_approved_by_trusted_host, "unverified");
     assert.equal(report.trustedHostInterface.method, "verifyProductReadGrant(request)");
     assert.ok(report.trustedHostInterface.request.includes("ownerPermissionReference") && report.trustedHostInterface.request.includes("receiptBinding"));
     assert.ok(report.trustedHostInterface.notAuthority.includes("an operator attestation boolean"));
@@ -637,7 +645,7 @@ export function registerProductReadCases(add) {
       }
       assert.equal(report.gates.find((entry) => entry.id === "decision_reference").state, "attested_only");
       assert.equal(report.gates.find((entry) => entry.id === "receipt_path_outside_git").state, "satisfied");
-      assert.deepEqual(report.missingGates.sort(), ["owner_permission_reference", "account_terms_reference", "request_cost_budget_reference", "source_revision_immutable", "trusted_host_grant_verifier"].sort());
+      assert.deepEqual(report.missingGates.sort(), ["owner_permission_reference", "account_terms_reference", "request_cost_budget_reference", "source_revision_immutable", "trusted_host_grant_verifier", "built_artifact_approved_by_trusted_host", "no_untrusted_preload"].sort());
       for (const [flag, id] of [["--decision-reference", "decision_reference"], ["--owner-permission-reference", "owner_permission_reference"],
         ["--account-terms-reference", "account_terms_reference"], ["--request-cost-budget-reference", "request_cost_budget_reference"],
         ["--source-revision", "source_revision_immutable"], ["--owner-packet-sha256", "owner_packet_sha256"], ["--receipt-path", "receipt_path_outside_git"]]) {
@@ -760,7 +768,7 @@ export function registerProductReadCases(add) {
     }
   });
 
-  const spyEnv = (log) => new Proxy({ PRODIGI_SANDBOX_API_KEY: FIXTURE_SANDBOX_KEY, UNRELATED_FIXTURE_VARIABLE: "unrelated" }, {
+  const spyEnv = (log, values = { PRODIGI_SANDBOX_API_KEY: FIXTURE_SANDBOX_KEY, UNRELATED_FIXTURE_VARIABLE: "unrelated" }) => new Proxy(values, {
     get(target, key) { log.push(`get:${String(key)}`); return target[key]; },
     has(target, key) { log.push(`has:${String(key)}`); return key in target; },
     ownKeys(target) { log.push("ownKeys"); return Reflect.ownKeys(target); },
@@ -779,18 +787,20 @@ export function registerProductReadCases(add) {
 
   const tracedFs = (events, overrides = {}) => ({
     ...fs,
-    openSync: (...args) => {
-      events.push("receipt.open");
-      return (overrides.openSync ?? fs.openSync)(...args);
+    openSync: (file, flags, mode) => {
+      // Only the exclusive receipt open ("wx") is traced or overridden; the built-artifact reads use numeric flags.
+      const receipt = flags === "wx";
+      if (receipt) events.push("receipt.open");
+      return (receipt && overrides.openSync !== undefined ? overrides.openSync : fs.openSync)(file, flags, mode);
     },
     ...Object.fromEntries(Object.entries(overrides).filter(([name]) => name !== "openSync"))
   });
 
-  async function execute(directory, { respond, host = trustedHost(), extraArgs = [], fsApi, events = [], envLog = [], name = "receipt.json" } = {}) {
+  async function execute(directory, { respond, host = trustedHost(), extraArgs = [], fsApi, events = [], envLog = [], envValues, execArgv = [], run = runProductRead, name = "receipt.json" } = {}) {
     const receipt = path.join(directory, name);
     const fetcher = fakeFetch(respond ?? (() => new Response(JSON.stringify(productDetailsResponse()), { status: 200 })), events);
-    const result = await runProductRead([...validArgs(receipt), "--execute", "--owner-approved", ...extraArgs], {
-      host, env: spyEnv(envLog), fetch: fetcher.impl, fs: fsApi ?? tracedFs(events), git: () => ({ head: REVISION, clean: true }), execArgv: []
+    const result = await run([...validArgs(receipt), "--execute", "--owner-approved", ...extraArgs], {
+      host, env: spyEnv(envLog, envValues), fetch: fetcher.impl, fs: fsApi ?? tracedFs(events), git: () => ({ head: REVISION, clean: true }), execArgv
     });
     return { result, receipt, fetcher, events, envLog };
   }
@@ -833,7 +843,7 @@ export function registerProductReadCases(add) {
       if (process.platform !== "win32") assert.equal(inFlight.mode, 0o600);
       assert.equal(fetcher.calls[0].init.redirect, "error");
       // Only the one named variable is ever touched, once, and only after the receipt exists.
-      assert.deepEqual(envLog, ["get:PRODIGI_SANDBOX_API_KEY"]);
+      assert.deepEqual(envLog, ["get:NODE_OPTIONS", "get:PRODIGI_SANDBOX_API_KEY"]);
       const written = fs.readFileSync(receipt, "utf8");
       assert.deepEqual(JSON.parse(written), result.output.receipt);
       assert.deepEqual(validateProductReadReceipt(result.output.receipt, { forbiddenText: [FIXTURE_SANDBOX_KEY] }), []);
@@ -859,7 +869,7 @@ export function registerProductReadCases(add) {
       assert.deepEqual(parsed.decoded.defaultPrintAreaRecommendedPixelSizes, [{ horizontal: 1800, vertical: 1200 }]);
       assert.deepEqual(parsed.attestations, {
         decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-        accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+        accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "LOADED_FROM_HASHED_BYTES_APPROVAL_IS_THE_TRUSTED_HOSTS_ONLY", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
         bundleEligible: false, trimOrTierApproval: false, customerApproval: false
       });
       assert.equal(parsed.trustedHostGrant.verified, true);
@@ -872,7 +882,7 @@ export function registerProductReadCases(add) {
       assert.equal(again.result.exitCode, 2);
       assert.ok(again.result.output.missingGates.includes("receipt_path_outside_git"));
       assert.equal(again.fetcher.calls.length, 0);
-      assert.deepEqual(again.envLog, []);
+      assert.deepEqual(withoutNodeOptions(again.envLog), []);
       assert.deepEqual(JSON.parse(fs.readFileSync(receipt, "utf8")), parsed);
     });
   });
@@ -928,9 +938,9 @@ export function registerProductReadCases(add) {
         const { result, receipt, fetcher, envLog } = await execute(directory, { host: trustedHost({ answer }) });
         assert.equal(result.exitCode, 2, name);
         assert.equal(result.output.execution, "NOT_EXECUTED", name);
-        assert.deepEqual(result.output.missingGates.sort(), ["account_terms_reference", "owner_permission_reference", "request_cost_budget_reference"], name);
+        assert.deepEqual(result.output.missingGates.sort(), ["account_terms_reference", "built_artifact_approved_by_trusted_host", "owner_permission_reference", "request_cost_budget_reference"], name);
         assert.equal(fetcher.calls.length, 0, name);
-        assert.deepEqual(envLog, [], name);
+        assert.deepEqual(withoutNodeOptions(envLog), [], name);
         assert.equal(fs.existsSync(receipt), false, name);
       });
     }
@@ -958,7 +968,7 @@ export function registerProductReadCases(add) {
       const envFile = await runProductRead([...validArgs(receipt), "--execute", "--owner-approved"], { ...deps, execArgv: ["--env-file=.env"] });
       assert.ok(envFile.output.missingGates.includes("no_whole_env_file_loading"));
       assert.equal(fetcher.calls.length, 0);
-      assert.deepEqual(envLog, []);
+      assert.deepEqual(withoutNodeOptions(envLog), []);
       assert.equal(fs.existsSync(receipt), false);
     });
   });
@@ -1002,7 +1012,7 @@ export function registerProductReadCases(add) {
       assert.equal(result.output.receiptError, "EEXIST");
       assert.equal(fs.readFileSync(target, "utf8"), "squatter", "the other file is left alone");
       assert.equal(fetcher.calls.length, 0);
-      assert.deepEqual(envLog, [], "the key is not read when the receipt cannot be claimed");
+      assert.deepEqual(withoutNodeOptions(envLog), [], "the key is not read when the receipt cannot be claimed");
     });
     // 2. A symlink to a decoy appears at the path: O_EXCL does not follow it, so the decoy is never written.
     await withTemp(async (directory) => {
@@ -1017,7 +1027,7 @@ export function registerProductReadCases(add) {
       assert.equal(result.output.status, "REFUSED_RECEIPT_NOT_EXCLUSIVE");
       assert.equal(fs.readFileSync(decoy, "utf8"), "decoy");
       assert.equal(fetcher.calls.length, 0);
-      assert.deepEqual(envLog, []);
+      assert.deepEqual(withoutNodeOptions(envLog), []);
     });
     // 3. The path is swapped for a symlink right after the file was opened: the run is refused before the key or the network.
     await withTemp(async (directory) => {
@@ -1037,7 +1047,7 @@ export function registerProductReadCases(add) {
       assert.equal(result.output.status, "REFUSED_RECEIPT_NOT_EXCLUSIVE");
       assert.equal(fs.readFileSync(decoy, "utf8"), "decoy");
       assert.equal(fetcher.calls.length, 0);
-      assert.deepEqual(envLog, []);
+      assert.deepEqual(withoutNodeOptions(envLog), []);
     });
     // 4. A hard link to a file elsewhere: more than one name means the receipt is not exclusively ours.
     await withTemp(async (directory) => {
@@ -1109,7 +1119,9 @@ export function registerProductReadCases(add) {
         ["unbounded bytes", (r) => { r.outcome.responseBytes = 1.5; }],
         ["bad timestamp", (r) => { r.recordedAt = "yesterday"; }],
         ["bad revision", (r) => { r.sourceRevision = "main"; }],
-        ["bad packet hash", (r) => { r.ownerPacketSha256 = "abc"; }]
+        ["bad packet hash", (r) => { r.ownerPacketSha256 = "abc"; }],
+        ["bad built artifact digest", (r) => { r.builtArtifactSha256 = "abc"; }],
+        ["built artifact called reviewed", (r) => { r.attestations.builtArtifact = "REVIEWED"; }]
       ];
       for (const [name, mutate] of mutations) {
         const bad = copy();
@@ -1124,5 +1136,309 @@ export function registerProductReadCases(add) {
       assert.notDeepEqual(validateProductReadReceipt(null), []);
       assert.notDeepEqual(validateProductReadReceipt([]), []);
     });
+  });
+  // --- R45 fixes: late continuations, header shape, key variable, built artifact binding, strict preflight grant ---------------
+
+  add("product-read.late-continuations-after-the-deadline-start-no-further-step", async () => {
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const late = { decision: [], grant: [], secret: [] };
+      const grantCalls = [];
+      const secrets = newSecrets();
+      const real = secrets.source;
+      const http = recordingHttp([{ body: productDetailsResponse() }]);
+      // Each stage resolves only after the 40 ms deadline has failed the call and the call has returned.
+      const decisionLate = { verify: (request) => new Promise((resolve) => late.decision.push(() => resolve({ ...request, productAndDestinationApproved: true, sandboxAccountAccessConfirmed: false }))) };
+      const before = countTimers();
+      await rejectsWith(productClient({ http, secrets: real, verifier: decisionLate, grant: fixtureGrantVerifier({ calls: grantCalls }), timeoutMs: 40 }).getProductDetails(PRODUCT_READ_REFERENCES), "timeout", "not_dispatched");
+      assert.equal(countTimers(), before);
+      late.decision.forEach((resume) => resume());
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      assert.equal(grantCalls.length, 0, "the trusted host must not be called after the deadline");
+      assert.equal(secrets.counter.loads, 0, "the key must not be read after the deadline");
+      assert.equal(http.calls.length, 0);
+
+      const grantCalls2 = [];
+      const secrets2 = newSecrets();
+      const grantLate = { verify: (request) => { grantCalls2.push(request); return new Promise((resolve) => late.grant.push(() => resolve(fixtureGrantVerifier().verify(request)))); } };
+      await rejectsWith(productClient({ http, secrets: secrets2.source, grant: grantLate, timeoutMs: 40 }).getProductDetails(PRODUCT_READ_REFERENCES), "timeout", "not_dispatched");
+      assert.equal(grantCalls2.length, 1, "the grant check had already started");
+      late.grant.forEach((resume) => resume());
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      assert.equal(secrets2.counter.loads, 0, "a grant that answers after the deadline must not lead to a key read");
+      assert.equal(http.calls.length, 0);
+
+      // A caller abort is a deadline too: the same steps stay unstarted.
+      const abort = new AbortController();
+      const secrets3 = newSecrets();
+      const grantCalls3 = [];
+      const decisionGate = { verify: (request) => new Promise((resolve) => late.secret.push(() => resolve({ ...request, productAndDestinationApproved: true, sandboxAccountAccessConfirmed: false }))) };
+      const aborted = productClient({ http, secrets: secrets3.source, verifier: decisionGate, grant: fixtureGrantVerifier({ calls: grantCalls3 }) }).getProductDetails(PRODUCT_READ_REFERENCES, abort.signal);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      abort.abort();
+      late.secret.forEach((resume) => resume());
+      await rejectsWith(aborted, "aborted", "not_dispatched");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.deepEqual([grantCalls3.length, secrets3.counter.loads, http.calls.length], [0, 0, 0]);
+      assert.deepEqual(unhandled, []);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+
+  add("product-read.one-shot-port-allows-exactly-the-two-header-names", async () => {
+    const base = { "X-API-Key": FIXTURE_SANDBOX_KEY, Accept: "application/json" };
+    for (const [name, headers] of [
+      ["extra header sorting first", { "A-Extra": "1", ...base }], ["extra header sorting last", { ...base, "Z-Extra": "1" }], ["extra header between", { ...base, "Accept-Language": "en" }],
+      ["only the key", { "X-API-Key": FIXTURE_SANDBOX_KEY }], ["only Accept", { Accept: "application/json" }], ["no headers", {}],
+      ["lower-case names", { "x-api-key": FIXTURE_SANDBOX_KEY, accept: "application/json" }], ["duplicated by case", { ...base, "x-api-key": "other" }]
+    ]) {
+      const calls = [];
+      const transport = createOneShotProdigiProductReadPort({ async send(request) { calls.push(request); return { status: 200, bodyText: "{}" }; } });
+      await assert.rejects(transport.port.send({ ...goodRequest(), headers }), /refused/u, name);
+      assert.equal(calls.length, 0, name);
+      assert.equal(transport.snapshot().dispatched, 0, name);
+    }
+    const accepted = [];
+    const ok = createOneShotProdigiProductReadPort({ async send(request) { accepted.push(Object.keys(request.headers).sort()); return { status: 200, bodyText: "{}" }; } });
+    await ok.port.send(goodRequest());
+    assert.deepEqual(accepted, [["Accept", "X-API-Key"]]);
+  });
+
+  add("script.product-read-key-comes-only-from-the-one-named-variable", async () => {
+    await withTemp(async (directory) => {
+      const envLog = [];
+      const others = { PRODIGI_API_KEY: FIXTURE_SANDBOX_KEY, PRODIGI_SANDBOX_KEY: FIXTURE_SANDBOX_KEY, SANDBOX_API_KEY: FIXTURE_SANDBOX_KEY, PRODIGI_LIVE_API_KEY: FIXTURE_SANDBOX_KEY, API_KEY: FIXTURE_SANDBOX_KEY };
+      const { result, receipt, fetcher } = await execute(directory, { envLog, envValues: others });
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.output.status, "failed");
+      assert.equal(fetcher.calls.length, 0, "no request without the one named variable");
+      assert.deepEqual(envLog, ["get:NODE_OPTIONS", "get:PRODIGI_SANDBOX_API_KEY"], "no other name is ever consulted");
+      const written = JSON.parse(fs.readFileSync(receipt, "utf8"));
+      assert.deepEqual(validateProductReadReceipt(written, { forbiddenText: [FIXTURE_SANDBOX_KEY] }), []);
+      assert.equal(written.outcome.errorCode, "credential_unavailable");
+      assert.equal(written.outcome.sideEffectState, "not_dispatched");
+      assert.equal(written.request.dispatched, 0);
+      assert.equal(written.outcome.httpStatus, null);
+      assert.equal(result.output.externalProviderCalls, 0);
+      assert.equal(result.output.credentialReads, 1);
+    });
+  });
+
+  // A copy of the command line and dist/ that a case can tamper with without touching the real build.
+  const copyBuild = (directory) => {
+    const root = path.join(directory, "tree");
+    fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), "{\"type\":\"module\"}\n");
+    const script = path.join(root, "scripts", "prodigi-sandbox-product-read.mjs");
+    fs.copyFileSync(scriptPath, script);
+    fs.cpSync(path.join(repositoryRoot, "dist"), path.join(root, "dist"), { recursive: true });
+    fs.mkdirSync(path.join(directory, "out"));
+    return { root, script, dist: path.join(root, "dist"), out: path.join(directory, "out") };
+  };
+  let copyCounter = 0;
+  const importCopy = async (script) => import(`${pathToFileURL(script).href}?copy=${copyCounter++}`);
+  const alter = (file, from, to) => {
+    const text = fs.readFileSync(file, "utf8");
+    assert.ok(text.includes(from), `${file} must contain ${from}`);
+    fs.writeFileSync(file, text.split(from).join(to));
+  };
+  // A careful host: it approves only the digest the owner reviewed and checks every other field it is handed.
+  const approvingHost = (approvedDigest, { calls = [], during } = {}) => ({
+    async verifyProductReadGrant(request) {
+      calls.push(request);
+      if (during !== undefined) await during(request);
+      if (request.builtArtifactSha256 !== approvedDigest || request.sourceRevision !== REVISION || request.ownerPacketSha256 !== PACKET_SHA) return undefined;
+      return { ...request, ownerPermissionVerified: true, accountTermsAccepted: true, requestCostBudgetApproved: true, singleUse: true, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+    }
+  });
+  const candidateDigest = async (tree) => {
+    const module = await importCopy(tree.script);
+    const out = await module.runProductRead(validArgs(path.join(tree.out, "probe.json")), { git: () => ({ head: REVISION, clean: true }), execArgv: [] });
+    return out.output.builtArtifact.candidateSha256;
+  };
+
+  add("script.product-read-built-artifact-binds-execution-to-the-hashed-bytes", async () => {
+    // The clean build, a careful host that approves exactly its digest, and the full success path.
+    let approved;
+    await withTemp(async (directory) => {
+      const tree = copyBuild(directory);
+      approved = await candidateDigest(tree);
+      assert.match(approved, /^[a-f0-9]{64}$/u);
+      const module = await importCopy(tree.script);
+      const hostCalls = [];
+      const { result, fetcher, envLog } = await execute(tree.out, { run: module.runProductRead, host: approvingHost(approved, { calls: hostCalls }) });
+      assert.equal(result.exitCode, 0, JSON.stringify(result.output).slice(0, 400));
+      assert.equal(fetcher.calls[0].url, PRODUCT_READ_URL);
+      assert.ok(hostCalls.length >= 2);
+      for (const call of hostCalls) {
+        assert.equal(call.builtArtifactSha256, approved);
+        assert.equal(call.sourceRevision, REVISION);
+        assert.equal(call.ownerPacketSha256, PACKET_SHA);
+      }
+      assert.equal(result.output.receipt.builtArtifactSha256, approved);
+      assert.equal(result.output.receipt.attestations.builtArtifact, "LOADED_FROM_HASHED_BYTES_APPROVAL_IS_THE_TRUSTED_HOSTS_ONLY");
+      assert.deepEqual(envLog, ["get:NODE_OPTIONS", "get:PRODIGI_SANDBOX_API_KEY"]);
+      // The digest does not depend on where the tree lives, only on the bytes.
+      assert.equal(await candidateDigest(copyBuild(fs.mkdtempSync(path.join(directory, "second-")))), approved);
+    });
+    assert.match(approved, /^[a-f0-9]{64}$/u);
+    // Every change to what would run changes the digest, so the careful host refuses and nothing is sent, read or created.
+    const tampers = [
+      ["fetch port retargeted (reviewer R45-01 repro)", (t) => alter(path.join(t.dist, "provider-matrix.js"), "/v4.0/products/GLOBAL-PHO-4X6", "/v4.0/products/GLOBAL-CAN-10x10")],
+      ["one byte in another module", (t) => alter(path.join(t.dist, "prodigi-secrets.js"), "export const", "export  const")],
+      ["extra module file", (t) => fs.writeFileSync(path.join(t.dist, "unrelated.js"), "export const injected = true;\n")],
+      ["extra declaration file", (t) => fs.writeFileSync(path.join(t.dist, "unrelated.d.ts"), "export {};\n")],
+      ["missing module file", (t) => fs.unlinkSync(path.join(t.dist, "status.js"))],
+      ["entry module imports an injected module", (t) => { fs.writeFileSync(path.join(t.dist, "evil.js"), "export const x = 1;\n"); fs.appendFileSync(path.join(t.dist, "index.js"), "import \"./evil.js\";\n"); }],
+      ["command-line controls modified", (t) => fs.appendFileSync(t.script, "\n// modified\n")],
+      ["sub directory added", (t) => { fs.mkdirSync(path.join(t.dist, "nested")); fs.writeFileSync(path.join(t.dist, "nested", "x.js"), "export {};\n"); }]
+    ];
+    for (const [name, tamper] of tampers) {
+      await withTemp(async (directory) => {
+        const tree = copyBuild(directory);
+        tamper(tree);
+        const module = await importCopy(tree.script);
+        const hostCalls = [];
+        const { result, receipt, fetcher, envLog } = await execute(tree.out, { run: module.runProductRead, host: approvingHost(approved, { calls: hostCalls }) });
+        assert.equal(result.exitCode, 2, name);
+        assert.equal(result.output.execution, "NOT_EXECUTED", name);
+        assert.ok(result.output.missingGates.includes("built_artifact_approved_by_trusted_host"), name);
+        assert.notEqual(hostCalls[0]?.builtArtifactSha256, approved, `${name}: the host must have been shown the changed digest`);
+        assert.equal(fetcher.calls.length, 0, name);
+        assert.deepEqual(withoutNodeOptions(envLog), [], name);
+        assert.equal(fs.existsSync(receipt), false, name);
+        assert.deepEqual([result.output.externalProviderCalls, result.output.credentialReads, result.output.networkRequests], [0, 0, 0], name);
+      });
+    }
+    // Changing dist/ AFTER it was hashed cannot change what runs: the library was imported from the hashed bytes.
+    await withTemp(async (directory) => {
+      const tree = copyBuild(directory);
+      const module = await importCopy(tree.script);
+      let retargeted = 0;
+      const { result, fetcher } = await execute(tree.out, {
+        run: module.runProductRead,
+        host: approvingHost(approved, { during: () => { if (retargeted === 0) { retargeted += 1; alter(path.join(tree.dist, "provider-matrix.js"), "/v4.0/products/GLOBAL-PHO-4X6", "/v4.0/products/GLOBAL-CAN-10x10"); } } })
+      });
+      assert.equal(retargeted, 1);
+      assert.match(fs.readFileSync(path.join(tree.dist, "provider-matrix.js"), "utf8"), /GLOBAL-CAN-10x10/u, "the file on disk really was retargeted");
+      assert.equal(result.exitCode, 0);
+      assert.equal(fetcher.calls.length, 1);
+      assert.equal(fetcher.calls[0].url, PRODUCT_READ_URL, "the request still goes to the hashed code's URL");
+      assert.equal(result.output.receipt.request.path, "/v4.0/products/GLOBAL-PHO-4X6");
+    });
+    // The preflight shows the candidate digest with approval pending, and a host-less run never reaches approval.
+    await withTemp(async (directory) => {
+      const tree = copyBuild(directory);
+      const module = await importCopy(tree.script);
+      const out = await module.runProductRead(validArgs(path.join(tree.out, "r.json")), { git: () => ({ head: REVISION, clean: true }), execArgv: [] });
+      assert.equal(out.output.builtArtifact.state, "approval_pending");
+      assert.equal(out.output.builtArtifact.candidateSha256, approved);
+      assert.equal(out.output.gates.find((g) => g.id === "built_artifact_approved_by_trusted_host").state, "unverified");
+      assert.equal(out.exitCode, 2);
+      assert.equal(out.output.authorizesExecution, false);
+    });
+  });
+
+  add("script.product-read-untrusted-preload-and-unloadable-artifacts-hard-fail", async () => {
+    const gateState = (output, id) => output.gates.find((g) => g.id === id)?.state;
+    // Code-loading flags in argv, at preflight and execute, and in NODE_OPTIONS at execute.
+    for (const execArgv of [["--import", "/tmp/preload.mjs"], ["--import=/tmp/preload.mjs"], ["--require=/tmp/preload.cjs"], ["-r", "/tmp/preload.cjs"], ["--loader=/tmp/loader.mjs"],
+      ["--experimental-loader", "x"], ["--eval", "1"], ["-e", "1"], ["--print", "1"], ["--inspect"], ["--inspect-brk=9229"]]) {
+      await withTemp(async (directory) => {
+        const hostCalls = [];
+        const { result, receipt, fetcher, envLog } = await execute(directory, { host: trustedHost({ calls: hostCalls }), execArgv });
+        assert.equal(result.exitCode, 2, execArgv.join(" "));
+        assert.equal(gateState(result.output, "no_untrusted_preload"), "invalid");
+        assert.deepEqual([hostCalls.length, fetcher.calls.length, fs.existsSync(receipt)], [0, 0, false], execArgv.join(" "));
+        assert.deepEqual(withoutNodeOptions(envLog), []);
+      });
+    }
+    for (const nodeOptions of ["--require /tmp/preload.js", "--max-old-space-size=64 --import=/tmp/p.mjs", "-r /tmp/p.js", "--loader x", "--inspect-wait"]) {
+      await withTemp(async (directory) => {
+        const hostCalls = [];
+        const { result, fetcher, envLog } = await execute(directory, { host: trustedHost({ calls: hostCalls }), envValues: { NODE_OPTIONS: nodeOptions, PRODIGI_SANDBOX_API_KEY: FIXTURE_SANDBOX_KEY } });
+        assert.equal(result.exitCode, 2, nodeOptions);
+        assert.equal(gateState(result.output, "no_untrusted_preload"), "invalid");
+        assert.deepEqual([hostCalls.length, fetcher.calls.length], [0, 0], nodeOptions);
+        assert.deepEqual(envLog, ["get:NODE_OPTIONS"], "the key is not read when NODE_OPTIONS preloads code");
+      });
+    }
+    await withTemp(async (directory) => {
+      const { result, fetcher } = await execute(directory, { envValues: { NODE_OPTIONS: "--max-old-space-size=64", PRODIGI_SANDBOX_API_KEY: FIXTURE_SANDBOX_KEY } });
+      assert.equal(result.exitCode, 0, "a benign NODE_OPTIONS is not a preload");
+      assert.equal(fetcher.calls.length, 1);
+    });
+    // Unsafe or unloadable build output: refused before the host is asked, with zero requests and no key read.
+    const unsafe = [
+      ["symlink inside dist", (t) => fs.symlinkSync(path.join(t.root, "package.json"), path.join(t.dist, "link.js")), "built_artifact_symlink"],
+      ["hard link into dist", (t) => fs.linkSync(path.join(t.dist, "status.js"), path.join(t.root, "second-name.js")), "built_artifact_unsafe_file"],
+      ["dist itself a symlink", (t) => { fs.renameSync(t.dist, path.join(t.root, "real-dist")); fs.symlinkSync(path.join(t.root, "real-dist"), t.dist); }, "built_artifact_root_not_directory"],
+      ["entry module missing", (t) => fs.unlinkSync(path.join(t.dist, "index.js")), "built_artifact_entry_missing"],
+      ["dist missing", (t) => fs.rmSync(t.dist, { recursive: true }), "built_artifact_missing"],
+      ["hidden file name", (t) => fs.writeFileSync(path.join(t.dist, ".hidden.js"), "export {};\n"), "built_artifact_unsafe_name"],
+      ["name with a space", (t) => fs.writeFileSync(path.join(t.dist, "a b.js"), "export {};\n"), "built_artifact_unsafe_name"],
+      ["too deep", (t) => { let d = t.dist; for (const n of ["a", "b", "c", "d", "e"]) { d = path.join(d, n); fs.mkdirSync(d); } fs.writeFileSync(path.join(d, "x.js"), "export {};\n"); }, "built_artifact_too_deep"],
+      ["too many files", (t) => { for (let i = 0; i < 260; i += 1) fs.writeFileSync(path.join(t.dist, `extra${i}.js`), "export {};\n"); }, "built_artifact_too_large"],
+      ["oversize total", (t) => fs.writeFileSync(path.join(t.dist, "big.js"), Buffer.alloc(17 * 1024 * 1024, 32)), "built_artifact_too_large"],
+      ["entry imports a bare package", (t) => fs.appendFileSync(path.join(t.dist, "index.js"), "import \"left-pad\";\n"), "could not be loaded"],
+      ["entry imports a bare package that really exists", (t) => {
+        fs.mkdirSync(path.join(t.root, "node_modules", "fakepkg"), { recursive: true });
+        fs.writeFileSync(path.join(t.root, "node_modules", "fakepkg", "package.json"), "{\"name\":\"fakepkg\",\"type\":\"module\",\"main\":\"index.js\"}\n");
+        fs.writeFileSync(path.join(t.root, "node_modules", "fakepkg", "index.js"), "export const injected = true;\n");
+        fs.appendFileSync(path.join(t.dist, "index.js"), "import \"fakepkg\";\n");
+      }, "could not be loaded"],
+      ["entry imports a file URL", (t) => fs.appendFileSync(path.join(t.dist, "index.js"), `import "${pathToFileURL(path.join(t.root, "package.json")).href}";\n`), "could not be loaded"],
+      ["entry imports a module outside the inventory", (t) => fs.appendFileSync(path.join(t.dist, "index.js"), "import \"./not-in-inventory.js\";\n"), "could not be loaded"]
+    ];
+    for (const [name, tamper, expected] of unsafe) {
+      await withTemp(async (directory) => {
+        const tree = copyBuild(directory);
+        tamper(tree);
+        const module = await importCopy(tree.script);
+        const hostCalls = [];
+        const { result, receipt, fetcher, envLog } = await execute(tree.out, { run: module.runProductRead, host: trustedHost({ calls: hostCalls }) });
+        assert.equal(result.exitCode, 2, name);
+        const inventory = result.output.gates.find((g) => g.id === "built_artifact_inventory");
+        assert.notEqual(inventory.state, "satisfied", name);
+        assert.ok(inventory.note.includes(expected), `${name}: ${inventory.note}`);
+        assert.deepEqual([hostCalls.length, fetcher.calls.length, fs.existsSync(receipt)], [0, 0, false], name);
+        assert.deepEqual(withoutNodeOptions(envLog), [], name);
+        assert.equal(result.output.builtArtifact.candidateSha256 === null || result.output.builtArtifact.state === "approval_pending", true, name);
+      });
+    }
+  });
+
+  add("script.product-read-preflight-applies-the-clients-strict-grant-check", async () => {
+    const cases = [
+      ["expired grant", (grant) => ({ ...grant, expiresAt: new Date(Date.now() - 1000).toISOString() })],
+      ["non-ISO expiry", (grant) => ({ ...grant, expiresAt: "tomorrow" })],
+      ["extra key", (grant) => ({ ...grant, extra: true })],
+      ["missing flag", (grant) => { const { singleUse, ...rest } = grant; void singleUse; return rest; }],
+      ["flag not exactly true", (grant) => ({ ...grant, accountTermsAccepted: "yes" })],
+      ["wrong built artifact digest echoed", (grant) => ({ ...grant, builtArtifactSha256: "e".repeat(64) })],
+      ["wrong source revision echoed", (grant) => ({ ...grant, sourceRevision: "f".repeat(40) })],
+      ["wrong owner packet echoed", (grant) => ({ ...grant, ownerPacketSha256: "b".repeat(64) })],
+      ["accessor field", (grant) => Object.defineProperty({ ...grant }, "singleUse", { enumerable: true, get: () => true })],
+      ["array", () => []]
+    ];
+    for (const [name, answer] of cases) {
+      await withTemp(async (directory) => {
+        const receipt = path.join(directory, "receipt.json");
+        const fetcher = fakeFetch(() => new Response("{}", { status: 200 }));
+        const deps = { host: trustedHost({ answer }), env: spyEnv([]), fetch: fetcher.impl, git: () => ({ head: REVISION, clean: true }), execArgv: [] };
+        const preflight = await runProductRead(validArgs(receipt), deps);
+        assert.equal(preflight.exitCode, 2, name);
+        assert.equal(preflight.output.gates.find((g) => g.id === "owner_permission_reference").state, "invalid", name);
+        assert.equal(preflight.output.gates.find((g) => g.id === "built_artifact_approved_by_trusted_host").state, "invalid", name);
+        const executed = await runProductRead([...validArgs(receipt), "--execute", "--owner-approved"], deps);
+        assert.equal(executed.exitCode, 2, name);
+        assert.equal(executed.output.execution, "NOT_EXECUTED", name);
+        assert.equal(fs.existsSync(receipt), false, `${name}: an unverifiable grant must fail before a receipt exists`);
+        assert.equal(fetcher.calls.length, 0, name);
+      });
+    }
   });
 }

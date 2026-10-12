@@ -102,6 +102,16 @@ export interface ProdigiProductReadReferences {
   readonly requestCostBudgetReference: string;
   /** `sha256:<64 hex>` of the exclusive receipt location this one request is bound to. */
   readonly receiptBinding: string;
+  /** 40-hex commit the run claims to execute. The trusted host checks it against the revision the owner approved. */
+  readonly sourceRevision: string;
+  /**
+   * 64-hex digest of the exact built code that will run (the complete `dist/` inventory plus the command-line
+   * controls), computed by the caller from the bytes it then loads. It is a CANDIDATE: only the trusted host can
+   * say it is the digest the owner approved, by echoing it.
+   */
+  readonly builtArtifactSha256: string;
+  /** 64-hex digest of the owner packet the approval refers to. */
+  readonly ownerPacketSha256: string;
 }
 
 export interface SandboxProductReadGrantRequest extends ProdigiProductReadReferences {
@@ -210,6 +220,8 @@ const MAX_TIMEOUT_MS = 60_000;
 const PRODUCT_READ_DEFAULT_TIMEOUT_MS = 15_000;
 const PRODUCT_READ_MAX_TIMEOUT_MS = 30_000;
 const SHA256_BINDING_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const REVISION_PATTERN = /^[a-f0-9]{40}$/u;
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
 const GRANT_EXPIRY_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/u;
 
 const SHIPPING_METHODS: Readonly<Record<string, ProdigiShippingMethod>> = Object.freeze({
@@ -852,8 +864,12 @@ export class ProdigiSandboxClient {
     const accountTermsReference = boundedText(references.accountTermsReference, 100, false);
     const requestCostBudgetReference = boundedText(references.requestCostBudgetReference, 100, false);
     const receiptBinding = boundedText(references.receiptBinding, 71, false);
+    const sourceRevision = boundedText(references.sourceRevision, 40, false);
+    const builtArtifactSha256 = boundedText(references.builtArtifactSha256, 64, false);
+    const ownerPacketSha256 = boundedText(references.ownerPacketSha256, 64, false);
     if (!REFERENCE_PATTERN.test(ownerPermissionReference) || !REFERENCE_PATTERN.test(accountTermsReference) ||
-        !REFERENCE_PATTERN.test(requestCostBudgetReference) || !SHA256_BINDING_PATTERN.test(receiptBinding)) {
+        !REFERENCE_PATTERN.test(requestCostBudgetReference) || !SHA256_BINDING_PATTERN.test(receiptBinding) ||
+        !REVISION_PATTERN.test(sourceRevision) || !SHA256_HEX_PATTERN.test(builtArtifactSha256) || !SHA256_HEX_PATTERN.test(ownerPacketSha256)) {
       return invalidInput();
     }
     const decision = this.#decision;
@@ -878,12 +894,15 @@ export class ProdigiSandboxClient {
       ownerPermissionReference,
       accountTermsReference,
       requestCostBudgetReference,
-      receiptBinding
+      receiptBinding,
+      sourceRevision,
+      builtArtifactSha256,
+      ownerPacketSha256
     });
   }
 
   /** Throws `grant_unverified` unless the trusted host echoes this exact request with every flag true and an unexpired grant. */
-  async #verifyProductReadGrant(request: SandboxProductReadGrantRequest): Promise<void> {
+  async #verifyProductReadGrant(request: SandboxProductReadGrantRequest, stillLive: () => void): Promise<void> {
     const fail = (): never => {
       throw new ProdigiSandboxError("grant_unverified", "not_dispatched");
     };
@@ -897,24 +916,15 @@ export class ProdigiSandboxClient {
     } catch {
       return fail();
     }
-    const grant = plainDataRecord(raw);
-    if (grant === undefined) return fail();
-    const requestKeys = Object.keys(request) as (keyof SandboxProductReadGrantRequest)[];
-    const allowed = new Set<string>([...requestKeys, "ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse", "expiresAt"]);
-    if (Object.keys(grant).some((key) => !allowed.has(key))) return fail();
-    for (const key of requestKeys) if (grant[key] !== request[key]) return fail();
-    if (grant.ownerPermissionVerified !== true || grant.accountTermsAccepted !== true ||
-        grant.requestCostBudgetApproved !== true || grant.singleUse !== true) return fail();
-    const expiresAt = grant.expiresAt;
-    if (typeof expiresAt !== "string" || !GRANT_EXPIRY_PATTERN.test(expiresAt)) return fail();
-    const expiry = Date.parse(expiresAt);
+    // An answer that arrives after the deadline or an abort is discarded: nothing may follow it.
+    stillLive();
     let now: number;
     try {
       now = this.#now();
     } catch {
       return fail();
     }
-    if (!Number.isFinite(expiry) || !Number.isFinite(now) || expiry <= now) return fail();
+    if (!isVerifiedSandboxProductReadGrant(request, raw, now)) return fail();
   }
 
   #assertMatchesDecision(sku: string, countryCode: string, shippingMethod: ProdigiShippingMethod): void {
@@ -938,6 +948,13 @@ export class ProdigiSandboxClient {
   ): Promise<{ readonly body: unknown; readonly status: number }> {
     if (!this.#enabled) throw new ProdigiSandboxError("sandbox_calls_disabled", "not_dispatched");
     if (isAborted(signal)) throw new ProdigiSandboxError("aborted", "not_dispatched");
+    // The product read re-checks the deadline/abort signal after EVERY await and before each trusted-host call and the
+    // key load, so a continuation that resumes after the deadline can start no further step. A step that was already
+    // running cannot be undone; nothing after it may run.
+    const productReadLive = operation === "productDetails";
+    const stillLive = (): void => {
+      if (productReadLive && isAborted(signal)) throw new ProdigiSandboxError("aborted", "not_dispatched");
+    };
     const policy = await evaluateProviderPolicy({
       adapterId: PRODIGI_SANDBOX_ADAPTER_ID,
       mode: "sandbox",
@@ -950,6 +967,7 @@ export class ProdigiSandboxClient {
       shippingMethod: this.#decision.shippingMethod,
       decisionReference: this.#decision.decisionReference
     }, this.#verifier);
+    stillLive();
     // The policy is the source of truth: only `sandbox_call_permitted` with
     // `providerCallPermitted: true` for this exact route may dispatch.
     if (policy.status !== "sandbox_call_permitted" || policy.providerCallPermitted !== true ||
@@ -963,7 +981,9 @@ export class ProdigiSandboxClient {
       // One concrete path only, and the trusted owner-action grant is resolved
       // before the credential is ever loaded.
       if (path !== PRODIGI_SANDBOX_PRODUCT_READ_PATH || grantRequest === undefined) throw new ProdigiSandboxError("invalid_input", "not_dispatched");
-      await this.#verifyProductReadGrant(grantRequest);
+      stillLive();
+      await this.#verifyProductReadGrant(grantRequest, stillLive);
+      stillLive();
     } else if (grantRequest !== undefined) {
       throw new ProdigiSandboxError("invalid_input", "not_dispatched");
     }
@@ -975,6 +995,7 @@ export class ProdigiSandboxClient {
     const uncertain: ProdigiSideEffectState = uncertainState(operation);
     const dispatch: DispatchState = state ?? { dispatched: false };
     let outcome: SendOutcome;
+    stillLive();
     try {
       outcome = await withServerSecret<SendOutcome>({
         providerId: "prodigi",
@@ -1016,6 +1037,26 @@ function plainDataRecord(value: unknown): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The single strict check of a trusted host's answer, shared by the client and the command-line preflight so the two
+ * cannot drift: the grant must be a plain data record with no extra keys, echo every field of the request exactly,
+ * carry the four verified flags as `true`, and expire after `nowMs`.
+ */
+export function isVerifiedSandboxProductReadGrant(request: SandboxProductReadGrantRequest, raw: unknown, nowMs: number): boolean {
+  const grant = plainDataRecord(raw);
+  if (grant === undefined) return false;
+  const requestKeys = Object.keys(request) as (keyof SandboxProductReadGrantRequest)[];
+  const allowed = new Set<string>([...requestKeys, "ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse", "expiresAt"]);
+  if (Object.keys(grant).some((key) => !allowed.has(key))) return false;
+  for (const key of requestKeys) if (grant[key] !== request[key]) return false;
+  if (grant.ownerPermissionVerified !== true || grant.accountTermsAccepted !== true ||
+      grant.requestCostBudgetApproved !== true || grant.singleUse !== true) return false;
+  const expiresAt = grant.expiresAt;
+  if (typeof expiresAt !== "string" || !GRANT_EXPIRY_PATTERN.test(expiresAt)) return false;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && Number.isFinite(nowMs) && expiry > nowMs;
 }
 
 class DeadlineExceeded extends Error {}

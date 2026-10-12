@@ -35,6 +35,7 @@ import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import * as nodeModule from "node:module";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -116,7 +117,7 @@ export function validateReceiptPath(value, fsApi = fs) {
 // ---------------------------------------------------------------------------
 // Receipt
 
-const RECEIPT_KEYS = ["schema", "sourceRevision", "ownerPacketSha256", "refs", "request", "outcome", "decoded", "trustedHostGrant", "attestations", "recordedAt"];
+const RECEIPT_KEYS = ["schema", "sourceRevision", "ownerPacketSha256", "builtArtifactSha256", "refs", "request", "outcome", "decoded", "trustedHostGrant", "attestations", "recordedAt"];
 const keysOf = (value) => (value !== null && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).sort().join(",") : "");
 const sameKeys = (value, expected) => keysOf(value) === [...expected].sort().join(",");
 
@@ -127,6 +128,7 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
   if (receipt.schema !== PRODUCT_READ_RECEIPT_SCHEMA) problems.push("schema");
   if (!REVISION_PATTERN.test(receipt.sourceRevision)) problems.push("sourceRevision");
   if (!SHA256_PATTERN.test(receipt.ownerPacketSha256)) problems.push("ownerPacketSha256");
+  if (!SHA256_PATTERN.test(receipt.builtArtifactSha256)) problems.push("builtArtifactSha256");
   if (!sameKeys(receipt.refs, ["decision", "ownerPermission", "accountTerms", "requestCostBudget"]) ||
       Object.values(receipt.refs).some((ref) => typeof ref !== "string" || !REFERENCE_PATTERN.test(ref))) problems.push("refs");
   const request = receipt.request;
@@ -149,7 +151,7 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
   if (!sameKeys(grant, ["verified", "expiresAt"]) || typeof grant.verified !== "boolean" || (grant.expiresAt !== null && !ISO_PATTERN.test(grant.expiresAt ?? ""))) problems.push("trustedHostGrant");
   const expected = {
     decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-    accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+    accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "LOADED_FROM_HASHED_BYTES_APPROVAL_IS_THE_TRUSTED_HOSTS_ONLY", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
     bundleEligible: false, trimOrTierApproval: false, customerApproval: false
   };
   if (!sameKeys(receipt.attestations, Object.keys(expected)) || Object.entries(expected).some(([key, value]) => receipt.attestations[key] !== value)) problems.push("attestations");
@@ -194,6 +196,143 @@ function safeObservation(observation) {
 }
 
 // ---------------------------------------------------------------------------
+// Built artifact: what will actually run
+//
+// `dist/` is git-ignored, so a clean HEAD says nothing about the code that executes. The candidate built artifact is the
+// deterministic inventory of EVERY regular file under dist/ plus this command line's own bytes (the CLI controls), as
+// sorted {path, size, sha256} entries; its digest is `builtArtifactSha256`. The bytes read for the digest are the bytes
+// that are loaded: the library is imported from those in-memory bytes through module hooks, never from the file
+// system, so there is no hash-then-import window and an unrelated or modified module cannot be loaded. The digest is a
+// CANDIDATE. Whether it is the digest the owner approved is decided only by the trusted host, which receives it in the
+// grant request and must echo it; this file never compares it with a value it computed itself or was handed on argv.
+
+const INVENTORY_SCHEMA = "prodigi-built-artifact-inventory/1";
+const distRoot = path.join(repositoryRoot, "dist");
+const cliControlFile = fileURLToPath(import.meta.url);
+const VERIFIED_SCHEME = "verified-dist:";
+const MAX_ARTIFACT_FILES = 256;
+const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
+const MAX_ARTIFACT_DEPTH = 4;
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+
+class ArtifactProblem extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
+
+function readRegularFile(fsApi, file, budget) {
+  const flags = fsApi.constants.O_RDONLY | (fsApi.constants.O_NOFOLLOW ?? 0);
+  let fd;
+  try {
+    fd = fsApi.openSync(file, flags);
+    const info = fsApi.fstatSync(fd);
+    if (!info.isFile() || info.nlink !== 1) throw new ArtifactProblem("built_artifact_unsafe_file");
+    budget.bytes += info.size;
+    if (budget.bytes > MAX_ARTIFACT_BYTES) throw new ArtifactProblem("built_artifact_too_large");
+    return fsApi.readFileSync(fd);
+  } catch (error) {
+    throw error instanceof ArtifactProblem ? error : new ArtifactProblem("built_artifact_unreadable");
+  } finally {
+    if (fd !== undefined) try { fsApi.closeSync(fd); } catch { /* nothing to recover */ }
+  }
+}
+
+/** Never throws. Returns `{ ok: true, sha256, entries, files }` or `{ ok: false, code }`; no module is executed. */
+export function inspectBuiltArtifact(fsApi = fs) {
+  try {
+    let root;
+    try {
+      root = fsApi.lstatSync(distRoot);
+    } catch (error) {
+      throw new ArtifactProblem(error?.code === "ENOENT" ? "built_artifact_missing" : "built_artifact_unreadable");
+    }
+    if (!root.isDirectory()) throw new ArtifactProblem("built_artifact_root_not_directory");
+    if (fsApi.realpathSync(distRoot) !== distRoot) throw new ArtifactProblem("built_artifact_root_symlink");
+    const files = new Map();
+    const budget = { bytes: 0 };
+    const walk = (directory, prefix, depth) => {
+      if (depth > MAX_ARTIFACT_DEPTH) throw new ArtifactProblem("built_artifact_too_deep");
+      for (const name of fsApi.readdirSync(directory).sort()) {
+        if (!SAFE_NAME.test(name)) throw new ArtifactProblem("built_artifact_unsafe_name");
+        const full = path.join(directory, name);
+        const info = fsApi.lstatSync(full);
+        if (info.isSymbolicLink()) throw new ArtifactProblem("built_artifact_symlink");
+        if (info.isDirectory()) {
+          walk(full, `${prefix}${name}/`, depth + 1);
+        } else if (info.isFile()) {
+          if (files.size >= MAX_ARTIFACT_FILES) throw new ArtifactProblem("built_artifact_too_large");
+          files.set(`${prefix}${name}`, readRegularFile(fsApi, full, budget));
+        } else {
+          throw new ArtifactProblem("built_artifact_special_file");
+        }
+      }
+    };
+    walk(distRoot, "", 0);
+    if (!files.has("index.js")) throw new ArtifactProblem("built_artifact_entry_missing");
+    const entries = [...files].map(([name, bytes]) => ({ path: `dist/${name}`, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }));
+    const control = readRegularFile(fsApi, cliControlFile, budget);
+    entries.push({ path: "scripts/prodigi-sandbox-product-read.mjs", size: control.length, sha256: createHash("sha256").update(control).digest("hex") });
+    entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    const sha256 = sha256Hex(JSON.stringify({ schema: INVENTORY_SCHEMA, entries }));
+    return { ok: true, sha256, entries, files };
+  } catch (error) {
+    return { ok: false, code: error instanceof ArtifactProblem ? error.code : "built_artifact_unreadable" };
+  }
+}
+
+/**
+ * Imports the library from the in-memory bytes that were hashed. The hooks serve only inventory members under a private
+ * URL scheme, resolve only relative specifiers and `node:` built-ins, and refuse everything else (a bare package, a
+ * file: URL, a module that is not in the inventory), so nothing outside the digested bytes can be loaded. They are
+ * removed again as soon as the import settles. Rejects if the hooks API is unavailable.
+ */
+async function loadVerifiedLibrary(files, digest) {
+  if (typeof nodeModule.registerHooks !== "function") throw new Error("module_hooks_unavailable");
+  // The digest is part of every URL. Node caches modules by URL, so equal URLs must always mean equal bytes: a
+  // different (e.g. tampered) inventory gets different URLs and can never be answered from an earlier instance.
+  const prefix = `${VERIFIED_SCHEME}/${digest}/`;
+  const known = (url) => {
+    if (!url.startsWith(prefix)) return undefined;
+    const name = url.slice(prefix.length);
+    return files.has(name) ? name : undefined;
+  };
+  const hooks = nodeModule.registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier.startsWith(VERIFIED_SCHEME)) {
+        if (known(specifier) === undefined) throw new Error("not_in_inventory");
+        return { url: specifier, shortCircuit: true };
+      }
+      if (typeof context.parentURL === "string" && context.parentURL.startsWith(VERIFIED_SCHEME)) {
+        if (specifier.startsWith("node:")) return nextResolve(specifier, context);
+        if (specifier.startsWith("./") || specifier.startsWith("../")) {
+          const url = new URL(specifier, context.parentURL).href;
+          if (known(url) === undefined) throw new Error("not_in_inventory");
+          return { url, shortCircuit: true };
+        }
+        throw new Error("module_not_allowed");
+      }
+      return nextResolve(specifier, context);
+    },
+    load(url, context, nextLoad) {
+      if (!url.startsWith(VERIFIED_SCHEME)) return nextLoad(url, context);
+      const name = known(url);
+      if (name === undefined) throw new Error("not_in_inventory");
+      return { format: "module", source: files.get(name), shortCircuit: true };
+    }
+  });
+  try {
+    return await import(`${prefix}index.js`);
+  } finally {
+    hooks.deregister();
+  }
+}
+
+// Flags and options that run code before this file or hook module loading. Anything that does is untrusted here.
+const PRELOAD_FLAG = /^(--import|--require|-r|--loader|--experimental-loader|--eval|-e|--print|-p|--inspect|--inspect-brk|--inspect-wait|--experimental-vm-modules)(=|$)/u;
+
+// ---------------------------------------------------------------------------
 // Preflight
 
 function defaultGit() {
@@ -235,14 +374,31 @@ function requestPlan() {
   };
 }
 
-async function evaluatePreflight(values, deps, libraryPresent) {
+async function evaluatePreflight(values, deps, artifact, library, executeMode) {
   const execArgv = deps.execArgv ?? process.execArgv;
   const gates = [];
   gates.push(gate("compiled_selection", "satisfied", "GLOBAL-PHO-4X6 / US / Standard, compiled in; no SKU, URL or host option exists"));
   gates.push(execArgv.some((argument) => argument.startsWith("--env-file"))
     ? gate("no_whole_env_file_loading", "invalid", "node --env-file loaded a whole .env into this process; export only PRODIGI_SANDBOX_API_KEY instead")
     : gate("no_whole_env_file_loading", "satisfied", "no --env-file"));
-  gates.push(libraryPresent ? gate("package_build_present", "satisfied", "dist/index.js loads") : gate("package_build_present", "missing", "run npm run build"));
+  // Code-loading flags (and, at execute, NODE_OPTIONS) run or hook code before this file; the digest below cannot see them.
+  let preload = execArgv.find((argument) => PRELOAD_FLAG.test(argument));
+  let preloadNote = "no code-loading flag in argv";
+  if (executeMode && preload === undefined) {
+    const nodeOptions = (deps.env ?? process.env).NODE_OPTIONS;
+    if (typeof nodeOptions === "string") preload = nodeOptions.split(/\s+/u).find((token) => PRELOAD_FLAG.test(token));
+    preloadNote = "no code-loading flag in argv or NODE_OPTIONS";
+  } else if (!executeMode) {
+    preloadNote = "no code-loading flag in argv (NODE_OPTIONS is read only at execute)";
+  }
+  gates.push(preload === undefined ? gate("no_untrusted_preload", "satisfied", preloadNote)
+    : gate("no_untrusted_preload", "invalid", `${preload.split("=")[0]} loads or hooks code before this command line; run without it`));
+  if (artifact.ok && library !== undefined) {
+    gates.push(gate("built_artifact_inventory", "satisfied", `candidate digest ${artifact.sha256} over ${artifact.entries.length} files (dist/ plus the CLI controls); loaded from these hashed bytes, never from the file system. Approval pending: only the trusted host can approve it`));
+  } else {
+    gates.push(gate("built_artifact_inventory", artifact.ok ? "invalid" : artifact.code === "built_artifact_missing" ? "missing" : "invalid",
+      artifact.ok ? "the hashed bytes could not be loaded as the library" : `${artifact.code}${artifact.code === "built_artifact_missing" ? " (run npm run build)" : ""}`));
+  }
 
   const revision = values["source-revision"];
   if (revision === undefined) gates.push(gate("source_revision_immutable", "missing", "--source-revision <40 hex> of the reviewed merged main commit"));
@@ -274,28 +430,36 @@ async function evaluatePreflight(values, deps, libraryPresent) {
 
   // The trusted host is the only thing that can turn a reference into authority.
   let grantExpiry = null;
+  let approvedByHost = "unverified";
   const references = [permission, terms, budget];
   const host = deps.host;
   if (host === undefined || host === null || typeof host.verifyProductReadGrant !== "function") {
     gates.push(gate("trusted_host_grant_verifier", "unavailable", "no trusted host supplies verifyProductReadGrant; this command line has none"));
   } else {
     gates.push(gate("trusted_host_grant_verifier", "satisfied", "a trusted host interface is present"));
-    if (references.every((entry) => entry.state === "unverified") && location.ok) {
-      const result = await verifyWithHost(host, buildGrantRequest(values));
+    const askable = references.every((entry) => entry.state === "unverified") && location.ok && artifact.ok && library !== undefined && preload === undefined &&
+      REVISION_PATTERN.test(values["source-revision"] ?? "") && SHA256_PATTERN.test(values["owner-packet-sha256"] ?? "") && decision.state === "unverified";
+    if (askable) {
+      const result = await verifyWithHost(host, buildGrantRequest(values, artifact.sha256), library);
       grantExpiry = result;
       const state = result === null ? "invalid" : "satisfied";
-      const note = result === null ? "the trusted host did not verify the references" : "the trusted host verified the references";
+      const note = result === null ? "the trusted host did not verify the references, source revision and built artifact digest" : "the trusted host verified the references, source revision and built artifact digest";
       for (const entry of references) {
         entry.state = state;
         entry.note = note;
       }
+      approvedByHost = state;
     }
   }
   gates.push(...references);
+  gates.push(approvedByHost === "satisfied"
+    ? gate("built_artifact_approved_by_trusted_host", "satisfied", "the trusted host echoed this candidate digest in its grant; whether it is the reviewed one is the host's claim, not this file's")
+    : approvedByHost === "invalid" ? gate("built_artifact_approved_by_trusted_host", "invalid", "the trusted host did not approve this candidate digest")
+      : gate("built_artifact_approved_by_trusted_host", "unverified", "approval pending: no trusted host has approved this candidate digest, so it is not reviewed"));
   return { gates, grantExpiry, location };
 }
 
-function buildGrantRequest(values) {
+function buildGrantRequest(values, builtArtifactSha256) {
   return Object.freeze({
     operation: "productDetails",
     providerId: "prodigi",
@@ -312,18 +476,23 @@ function buildGrantRequest(values) {
     ownerPermissionReference: values["owner-permission-reference"],
     accountTermsReference: values["account-terms-reference"],
     requestCostBudgetReference: values["request-cost-budget-reference"],
-    receiptBinding: `sha256:${sha256Hex(values["receipt-path"])}`
+    receiptBinding: `sha256:${sha256Hex(values["receipt-path"])}`,
+    sourceRevision: values["source-revision"],
+    builtArtifactSha256,
+    ownerPacketSha256: values["owner-packet-sha256"]
   });
 }
 
-/** Returns the grant's expiry when the host verified this exact request, else null. Never throws. */
-async function verifyWithHost(host, request) {
+/**
+ * Returns the grant's expiry when the host verified this exact request, else null. Never throws. The check is the
+ * library's own `isVerifiedSandboxProductReadGrant` (exact echo, no extra or missing keys, four true flags, unexpired),
+ * the same function the client applies, so the preflight cannot be looser than the execution.
+ */
+async function verifyWithHost(host, request, library) {
   try {
     const grant = await host.verifyProductReadGrant(request);
-    if (grant === null || typeof grant !== "object") return null;
-    for (const [key, value] of Object.entries(request)) if (grant[key] !== value) return null;
-    if (grant.ownerPermissionVerified !== true || grant.accountTermsAccepted !== true || grant.requestCostBudgetApproved !== true || grant.singleUse !== true) return null;
-    const expiry = typeof grant.expiresAt === "string" ? Date.parse(grant.expiresAt) : Number.NaN;
+    if (!library.isVerifiedSandboxProductReadGrant(request, grant, Date.now())) return null;
+    const expiry = Date.parse(grant.expiresAt);
     return Number.isFinite(expiry) ? new Date(expiry).toISOString() : null;
   } catch {
     return null;
@@ -333,7 +502,7 @@ async function verifyWithHost(host, request) {
 /** What this command line does NOT establish, kept separate from the gates because no code path here can satisfy them. */
 function unverifiedAssertions() {
   return [
-    { id: "built_artifact_matches_source", state: "unverified", note: "dist/ is not compared with src/; the source-revision gate proves only that HEAD equals the supplied commit and the tree is clean" },
+    { id: "built_artifact_reviewed", state: "approval_pending", note: "the candidate digest is computed from the dist/ and CLI bytes that would be loaded; it is not reviewed until an actual independent review of that exact source and current CI, and only a trusted host can approve it for execution. The source-revision gate proves only that HEAD equals the supplied commit and the tree is clean" },
     { id: "compiled_tuple_verified_by_authority", state: "not_verified_operator_attestation_only", note: "GLOBAL-PHO-4X6 / US / Standard is compiled in from the owner-delegated decision; nothing here verifies it against a real authority, and HEAD does not verify it" },
     { id: "account_access", state: "not_asserted", note: "the key's presence or this read's success is not account proof; the public statement that sandbox orders are not charged says nothing about request cost or account permission" },
     { id: "request_cost", state: "UNKNOWN", note: "never assumed zero" },
@@ -345,7 +514,8 @@ function unverifiedAssertions() {
 function trustedHostInterface() {
   return {
     method: "verifyProductReadGrant(request)",
-    request: Object.keys(buildGrantRequest({ "decision-reference": "<ref>", "owner-permission-reference": "<ref>", "account-terms-reference": "<ref>", "request-cost-budget-reference": "<ref>", "receipt-path": "<path>" })),
+    request: Object.keys(buildGrantRequest({ "decision-reference": "<ref>", "owner-permission-reference": "<ref>", "account-terms-reference": "<ref>", "request-cost-budget-reference": "<ref>", "receipt-path": "<path>", "source-revision": "<40 hex>", "owner-packet-sha256": "<64 hex>" }, "<64 hex>")),
+    mustCheck: "the sourceRevision, builtArtifactSha256 and ownerPacketSha256 against what the owner actually approved, and refuse (return undefined) when any differs",
     mustReturn: "the request echoed with ownerPermissionVerified, accountTermsAccepted, requestCostBudgetApproved and singleUse all true and an unexpired expiresAt",
     mustResolveWith: ["the owner's permission naming this one request", "the sandbox account terms the owner actually accepted", "the per-request cost budget"],
     notAuthority: ["a reference that merely exists", "an operator attestation boolean", "the presence of an API key"]
@@ -356,7 +526,7 @@ function counters(extra = {}) {
   return { externalProviderCalls: 0, credentialReads: 0, networkRequests: 0, ...extra };
 }
 
-function preflightReport(mode, values, evaluation) {
+function preflightReport(mode, values, evaluation, artifact) {
   const execute = mode === "execute";
   const missing = evaluation.gates.filter((entry) => !OK_STATES.has(entry.state)).map((entry) => entry.id);
   if (execute && values["owner-approved"] !== true) missing.push("owner_approved_flag");
@@ -370,6 +540,9 @@ function preflightReport(mode, values, evaluation) {
     requestPlan: requestPlan(),
     gates: evaluation.gates,
     missingGates: missing,
+    builtArtifact: artifact.ok
+      ? { schema: INVENTORY_SCHEMA, candidateSha256: artifact.sha256, entries: artifact.entries.length, cliControls: ["scripts/prodigi-sandbox-product-read.mjs"], state: "approval_pending", loadedFrom: "the hashed in-memory bytes, never the file system" }
+      : { schema: INVENTORY_SCHEMA, candidateSha256: null, state: "invalid", problem: artifact.code },
     unverifiedAssertions: unverifiedAssertions(),
     trustedHostInterface: trustedHostInterface(),
     ...counters(),
@@ -404,21 +577,25 @@ export async function runProductRead(argv, deps = {}) {
   } catch {
     return { exitCode: 2, output: { schema: PRODUCT_READ_PREFLIGHT_SCHEMA, execution: "NOT_EXECUTED", status: "REFUSED_UNKNOWN_OR_MALFORMED_OPTION", authorizesExecution: false, ...counters() } };
   }
-  let library;
-  try {
-    library = await import("../dist/index.js");
-  } catch {
-    library = undefined;
-  }
   const mode = values.execute === true ? "execute" : "preflight";
-  const evaluation = await evaluatePreflight(values, deps, library !== undefined);
-  const report = preflightReport(mode, values, evaluation);
+  // Inspect and hash the code first; the library is then imported from exactly those bytes (or not at all).
+  const artifact = inspectBuiltArtifact(deps.fs ?? fs);
+  let library;
+  if (artifact.ok) {
+    try {
+      library = await loadVerifiedLibrary(artifact.files, artifact.sha256);
+    } catch {
+      library = undefined;
+    }
+  }
+  const evaluation = await evaluatePreflight(values, deps, artifact, library, mode === "execute");
+  const report = preflightReport(mode, values, evaluation, artifact);
   if (mode === "preflight") return { exitCode: report.missingGates.length === 0 ? 0 : 2, output: report };
   if (report.missingGates.length > 0) return refusal({ ...report, status: "REFUSED_GATES_MISSING" });
-  return executeRead(values, deps, library, evaluation, report);
+  return executeRead(values, deps, library, evaluation, report, artifact);
 }
 
-async function executeRead(values, deps, library, evaluation, report) {
+async function executeRead(values, deps, library, evaluation, report, artifact) {
   const fsApi = deps.fs ?? fs;
   const receiptPath = values["receipt-path"];
   // 1. The receipt location is claimed exclusively BEFORE the key is read or any request exists.
@@ -437,6 +614,7 @@ async function executeRead(values, deps, library, evaluation, report) {
     schema: PRODUCT_READ_RECEIPT_SCHEMA,
     sourceRevision: values["source-revision"],
     ownerPacketSha256: values["owner-packet-sha256"],
+    builtArtifactSha256: artifact.sha256,
     refs: {
       decision: values["decision-reference"],
       ownerPermission: values["owner-permission-reference"],
@@ -492,7 +670,10 @@ async function executeRead(values, deps, library, evaluation, report) {
       ownerPermissionReference: values["owner-permission-reference"],
       accountTermsReference: values["account-terms-reference"],
       requestCostBudgetReference: values["request-cost-budget-reference"],
-      receiptBinding: `sha256:${sha256Hex(receiptPath)}`
+      receiptBinding: `sha256:${sha256Hex(receiptPath)}`,
+      sourceRevision: values["source-revision"],
+      builtArtifactSha256: artifact.sha256,
+      ownerPacketSha256: values["owner-packet-sha256"]
     });
     observation = safeObservation(library.projectProductReadObservation(details));
   } catch (error) {
@@ -525,7 +706,7 @@ async function executeRead(values, deps, library, evaluation, report) {
     trustedHostGrant: { verified: true, expiresAt: evaluation.grantExpiry },
     attestations: {
       decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
-      accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "NOT_VERIFIED_AGAINST_SOURCE", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
+      accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "LOADED_FROM_HASHED_BYTES_APPROVAL_IS_THE_TRUSTED_HOSTS_ONLY", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
       bundleEligible: false, trimOrTierApproval: false, customerApproval: false
     },
     recordedAt: new Date().toISOString()

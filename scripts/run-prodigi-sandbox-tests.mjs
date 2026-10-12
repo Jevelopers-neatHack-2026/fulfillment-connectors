@@ -54,6 +54,12 @@ export const PRODIGI_SANDBOX_SUITE_CASE_IDS = Object.freeze([
   "script.product-read-preflight-with-a-trusted-host-verifies-but-never-executes-or-reads-the-environment",
   "script.product-read-receipt-races-and-reuse-fail-closed",
   "script.product-read-receipt-validator-rejects-unsafe-or-overstated-content",
+  "product-read.late-continuations-after-the-deadline-start-no-further-step",
+  "product-read.one-shot-port-allows-exactly-the-two-header-names",
+  "script.product-read-key-comes-only-from-the-one-named-variable",
+  "script.product-read-built-artifact-binds-execution-to-the-hashed-bytes",
+  "script.product-read-untrusted-preload-and-unloadable-artifacts-hard-fail",
+  "script.product-read-preflight-applies-the-clients-strict-grant-check",
   "guard.blocks-fetch-http-https-net-and-tls"
 ]);
 
