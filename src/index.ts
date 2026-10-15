@@ -98,6 +98,7 @@ export type {
   QuoteProviderCallContext,
   QuoteProviderRequest,
   QuoteRequiredAction,
+  QuoteSnapshotPersistence,
   QuoteUnknownReason,
   QuotedAmount
 } from "./quotes.js";

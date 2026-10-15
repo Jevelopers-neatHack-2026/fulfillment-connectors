@@ -79,7 +79,7 @@ Requires Node.js 24.21.0 ([`.node-version`](.node-version), `engines`) and npm 1
 git clone https://github.com/Jevelopers-neatHack-2026/fulfillment-connectors.git
 cd fulfillment-connectors
 npm ci      # locked install; may need registry access
-npm test    # builds dist/ and runs all 16 existing local fixture suites plus the development capability consumer checks
+npm test    # builds dist/ and runs all 16 existing local fixture suites plus the development capability consumer and quote-store checks
 ```
 
 No test calls a provider or another repository.
