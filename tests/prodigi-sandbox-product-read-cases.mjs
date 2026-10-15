@@ -1352,6 +1352,38 @@ export function registerProductReadCases(add) {
     });
   });
 
+  add("script.product-read-approval-precedes-any-candidate-module-evaluation", async () => {
+    await withTemp(async (directory) => {
+      const tree = copyBuild(directory);
+      const marker = "fc_r45_unapproved_candidate_evaluation";
+      delete globalThis[marker];
+      fs.appendFileSync(path.join(tree.dist, "index.js"), `\nglobalThis[${JSON.stringify(marker)}] = (globalThis[${JSON.stringify(marker)}] ?? 0) + 1;\n`);
+      const module = await importCopy(tree.script);
+      const approved = module.inspectBuiltArtifact().sha256;
+      const receipt = path.join(tree.out, "receipt.json");
+      const base = { git: () => ({ head: REVISION, clean: true }), execArgv: [] };
+      try {
+        // Both hostless and fully approved PREFLIGHT must remain data-only.
+        await module.runProductRead(validArgs(receipt), base);
+        assert.equal(globalThis[marker], undefined, "hostless preflight must not evaluate candidate code");
+        await module.runProductRead(validArgs(receipt), { ...base, host: approvingHost(approved) });
+        assert.equal(globalThis[marker], undefined, "approved preflight still must not evaluate code");
+        // A denied candidate must not evaluate even though it is valid JavaScript and has a real top-level effect.
+        const denied = await execute(tree.out, { run: module.runProductRead, host: approvingHost("e".repeat(64)) });
+        assert.equal(denied.result.exitCode, 2);
+        assert.equal(globalThis[marker], undefined, "digest refusal must precede module evaluation");
+        assert.equal(denied.fetcher.calls.length, 0);
+        assert.deepEqual(withoutNodeOptions(denied.envLog), []);
+        assert.equal(fs.existsSync(receipt), false);
+        // Positive control: the exact same top-level effect is reachable after approval.
+        const allowed = await execute(tree.out, { run: module.runProductRead, host: approvingHost(approved) });
+        assert.equal(allowed.result.exitCode, 0);
+        assert.equal(globalThis[marker], 1);
+        assert.equal(allowed.fetcher.calls.length, 1, "injected fake fetch only");
+      } finally { delete globalThis[marker]; }
+    });
+  });
+
   add("script.product-read-untrusted-preload-and-unloadable-artifacts-hard-fail", async () => {
     const gateState = (output, id) => output.gates.find((g) => g.id === id)?.state;
     // Code-loading flags in argv, at preflight and execute, and in NODE_OPTIONS at execute.
@@ -1415,7 +1447,9 @@ export function registerProductReadCases(add) {
         const inventory = result.output.gates.find((g) => g.id === "built_artifact_inventory");
         assert.notEqual(inventory.state, "satisfied", name);
         assert.ok(inventory.note.includes(expected), `${name}: ${inventory.note}`);
-        assert.deepEqual([hostCalls.length, fetcher.calls.length, fs.existsSync(receipt)], [0, 0, false], name);
+        // Structural inventory failures precede approval. Module resolution is intentionally
+        // attempted only AFTER approval, so a valid inventory with a bad import reaches the host.
+        assert.deepEqual([hostCalls.length > 0, fetcher.calls.length, fs.existsSync(receipt)], [expected === "could not be loaded", 0, false], name);
         assert.deepEqual(withoutNodeOptions(envLog), [], name);
         assert.equal(result.output.builtArtifact.candidateSha256 === null || result.output.builtArtifact.state === "approval_pending", true, name);
       });

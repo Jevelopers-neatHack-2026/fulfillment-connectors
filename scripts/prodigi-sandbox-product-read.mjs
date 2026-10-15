@@ -31,7 +31,7 @@
  * (`node --env-file` is refused) or a log. Export just that one variable for the
  * one process.
  */
-import { parseArgs } from "node:util";
+import { parseArgs, types } from "node:util";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -374,7 +374,7 @@ function requestPlan() {
   };
 }
 
-async function evaluatePreflight(values, deps, artifact, library, executeMode) {
+async function evaluatePreflight(values, deps, artifact, executeMode) {
   const execArgv = deps.execArgv ?? process.execArgv;
   const gates = [];
   gates.push(gate("compiled_selection", "satisfied", "GLOBAL-PHO-4X6 / US / Standard, compiled in; no SKU, URL or host option exists"));
@@ -393,8 +393,8 @@ async function evaluatePreflight(values, deps, artifact, library, executeMode) {
   }
   gates.push(preload === undefined ? gate("no_untrusted_preload", "satisfied", preloadNote)
     : gate("no_untrusted_preload", "invalid", `${preload.split("=")[0]} loads or hooks code before this command line; run without it`));
-  if (artifact.ok && library !== undefined) {
-    gates.push(gate("built_artifact_inventory", "satisfied", `candidate digest ${artifact.sha256} over ${artifact.entries.length} files (dist/ plus the CLI controls); loaded from these hashed bytes, never from the file system. Approval pending: only the trusted host can approve it`));
+  if (artifact.ok) {
+    gates.push(gate("built_artifact_inventory", "satisfied", `candidate digest ${artifact.sha256} over ${artifact.entries.length} files (dist/ plus the CLI controls); not loaded during preflight. Execution may load only these hashed bytes after trusted-host approval`));
   } else {
     gates.push(gate("built_artifact_inventory", artifact.ok ? "invalid" : artifact.code === "built_artifact_missing" ? "missing" : "invalid",
       artifact.ok ? "the hashed bytes could not be loaded as the library" : `${artifact.code}${artifact.code === "built_artifact_missing" ? " (run npm run build)" : ""}`));
@@ -437,10 +437,10 @@ async function evaluatePreflight(values, deps, artifact, library, executeMode) {
     gates.push(gate("trusted_host_grant_verifier", "unavailable", "no trusted host supplies verifyProductReadGrant; this command line has none"));
   } else {
     gates.push(gate("trusted_host_grant_verifier", "satisfied", "a trusted host interface is present"));
-    const askable = references.every((entry) => entry.state === "unverified") && location.ok && artifact.ok && library !== undefined && preload === undefined &&
+    const askable = references.every((entry) => entry.state === "unverified") && location.ok && artifact.ok && preload === undefined &&
       REVISION_PATTERN.test(values["source-revision"] ?? "") && SHA256_PATTERN.test(values["owner-packet-sha256"] ?? "") && decision.state === "unverified";
     if (askable) {
-      const result = await verifyWithHost(host, buildGrantRequest(values, artifact.sha256), library);
+      const result = await verifyWithHost(host, buildGrantRequest(values, artifact.sha256));
       grantExpiry = result;
       const state = result === null ? "invalid" : "satisfied";
       const note = result === null ? "the trusted host did not verify the references, source revision and built artifact digest" : "the trusted host verified the references, source revision and built artifact digest";
@@ -485,13 +485,39 @@ function buildGrantRequest(values, builtArtifactSha256) {
 
 /**
  * Returns the grant's expiry when the host verified this exact request, else null. Never throws. The check is the
- * library's own `isVerifiedSandboxProductReadGrant` (exact echo, no extra or missing keys, four true flags, unexpired),
- * the same function the client applies, so the preflight cannot be looser than the execution.
+ * built-in-only bootstrap check (exact echo, no extra/missing keys, four true flags, unexpired).
+ * Candidate modules are not loaded here; the client checks again after approved loading.
  */
-async function verifyWithHost(host, request, library) {
+// Built-in-only bootstrap check: candidate code cannot verify its own permission to run.
+// The provider client separately repeats its own strict check immediately before credential access.
+function bootstrapGrantValid(request, value, nowMs) {
+  try {
+    if (!value || typeof value !== "object" || types.isProxy(value) || Array.isArray(value)) return false;
+    if (![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+    const requestKeys = Object.keys(request);
+    const flags = ["ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse"];
+    const approved = ["approvedSourceRevision", "approvedBuiltArtifactSha256", "approvedOwnerPacketSha256"];
+    const keys = [...requestKeys, ...flags, ...approved, "expiresAt"];
+    if (Reflect.ownKeys(value).length !== keys.length) return false;
+    const grant = Object.create(null);
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor)) return false;
+      grant[key] = descriptor.value;
+    }
+    if (requestKeys.some((key) => grant[key] !== request[key]) || flags.some((key) => grant[key] !== true)) return false;
+    if (grant.approvedSourceRevision !== request.sourceRevision || grant.approvedBuiltArtifactSha256 !== request.builtArtifactSha256 ||
+        grant.approvedOwnerPacketSha256 !== request.ownerPacketSha256) return false;
+    if (typeof grant.expiresAt !== "string" || !ISO_PATTERN.test(grant.expiresAt)) return false;
+    const expiry = Date.parse(grant.expiresAt);
+    return Number.isFinite(nowMs) && Number.isFinite(expiry) && new Date(expiry).toISOString() === grant.expiresAt && expiry > nowMs;
+  } catch { return false; }
+}
+
+async function verifyWithHost(host, request) {
   try {
     const grant = await host.verifyProductReadGrant(request);
-    if (!library.isVerifiedSandboxProductReadGrant(request, grant, Date.now())) return null;
+    if (!bootstrapGrantValid(request, grant, Date.now())) return null;
     const expiry = Date.parse(grant.expiresAt);
     return Number.isFinite(expiry) ? new Date(expiry).toISOString() : null;
   } catch {
@@ -541,7 +567,7 @@ function preflightReport(mode, values, evaluation, artifact) {
     gates: evaluation.gates,
     missingGates: missing,
     builtArtifact: artifact.ok
-      ? { schema: INVENTORY_SCHEMA, candidateSha256: artifact.sha256, entries: artifact.entries.length, cliControls: ["scripts/prodigi-sandbox-product-read.mjs"], state: "approval_pending", loadedFrom: "the hashed in-memory bytes, never the file system" }
+      ? { schema: INVENTORY_SCHEMA, candidateSha256: artifact.sha256, entries: artifact.entries.length, cliControls: ["scripts/prodigi-sandbox-product-read.mjs"], state: "approval_pending", loadedFrom: "not loaded by preflight; execute loads approved in-memory bytes only" }
       : { schema: INVENTORY_SCHEMA, candidateSha256: null, state: "invalid", problem: artifact.code },
     unverifiedAssertions: unverifiedAssertions(),
     trustedHostInterface: trustedHostInterface(),
@@ -578,20 +604,19 @@ export async function runProductRead(argv, deps = {}) {
     return { exitCode: 2, output: { schema: PRODUCT_READ_PREFLIGHT_SCHEMA, execution: "NOT_EXECUTED", status: "REFUSED_UNKNOWN_OR_MALFORMED_OPTION", authorizesExecution: false, ...counters() } };
   }
   const mode = values.execute === true ? "execute" : "preflight";
-  // Inspect and hash the code first; the library is then imported from exactly those bytes (or not at all).
+  // Hashing is data-only. No candidate module may evaluate until the trusted host approves its exact digest.
   const artifact = inspectBuiltArtifact(deps.fs ?? fs);
-  let library;
-  if (artifact.ok) {
-    try {
-      library = await loadVerifiedLibrary(artifact.files, artifact.sha256);
-    } catch {
-      library = undefined;
-    }
-  }
-  const evaluation = await evaluatePreflight(values, deps, artifact, library, mode === "execute");
+  const evaluation = await evaluatePreflight(values, deps, artifact, mode === "execute");
   const report = preflightReport(mode, values, evaluation, artifact);
   if (mode === "preflight") return { exitCode: report.missingGates.length === 0 ? 0 : 2, output: report };
   if (report.missingGates.length > 0) return refusal({ ...report, status: "REFUSED_GATES_MISSING" });
+  let library;
+  try { library = await loadVerifiedLibrary(artifact.files, artifact.sha256); }
+  catch {
+    const gates = report.gates.map((entry) => entry.id === "built_artifact_inventory"
+      ? gate(entry.id, "invalid", "approved hashed bytes could not be loaded as the library") : entry);
+    return refusal({ ...report, gates, status: "REFUSED_APPROVED_ARTIFACT_UNLOADABLE", missingGates: ["built_artifact_inventory"] });
+  }
   return executeRead(values, deps, library, evaluation, report, artifact);
 }
 

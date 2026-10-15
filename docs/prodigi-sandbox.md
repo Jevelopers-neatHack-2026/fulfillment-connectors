@@ -173,3 +173,24 @@ This names the SKU, destination and shipping that items 1 and 3 below ask for. I
 3. **Print-production approval** of one SKU and print specification, destination and shipping method, and a real `SandboxDecisionVerifier` that resolves that evidence.
 4. **A sandbox order-create test**, under separate owner approval. Then update the provider matrix's per-operation `implementation` and `accountTested` fields, and `sandboxAdapter`, with the evidence.
 5. Cancellation, runtime `ProviderAdapter` wiring and live mode remain out of scope. Callback intake and authenticated reconciliation are covered in [Prodigi callbacks](prodigi-callbacks.md). They are offline-only and disabled by default.
+
+
+### R45-01: approval before candidate module evaluation
+
+The product-read CLI now inventories candidate bytes without importing `dist/`.
+Preflight never loads candidate modules, even with a valid trusted-host grant.
+Execute first checks all gates using built-in-only bootstrap validation of the
+host's exact grant, including independently approved source/artifact/packet values.
+Only after that approval does it import the captured hashed bytes. The client
+revalidates its own grant immediately before credential access. Approval does not
+come from a validator supplied by the candidate it would authorize.
+
+Module-resolution failures can only be observed after approved loading; inventory
+path/size/link failures are still refused before asking the host. Loading failure
+returns `REFUSED_APPROVED_ARTIFACT_UNLOADABLE` with no receipt/key/provider request.
+Tests include a real top-level candidate marker: absent for hostless/approved
+preflight and denied execution; present after approved loading through injected
+fake fetch. Existing late-continuation, strict-grant, hashed-byte and zero-network
+controls remain. This repairs the local ordering defect only. Independent review,
+PR45/current-main reconciliation (including the existing PR52 proposal), real host
+permission/account terms/request budget, and actual sandbox evidence remain open.
