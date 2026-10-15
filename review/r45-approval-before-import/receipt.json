@@ -1,0 +1,131 @@
+{
+  "issue": 15,
+  "finding": "R45-01",
+  "state": "implementation_candidate_independent_review_pending",
+  "base": "4dac32fba98d0031ebee9ce6d542263e25b0d322",
+  "implementation_head": "0fea37ca12decdcb93f012454e491baf97a8df51",
+  "tree": "93316cb17fa1c6445192bafb5dd12135df671d00",
+  "pr": "https://github.com/Jevelopers-neatHack-2026/fulfillment-connectors/pull/54",
+  "target": "orchestration/sandbox-product-read-20261012",
+  "original_branch_unchanged": true,
+  "runtime": {
+    "node": "24.21.0",
+    "npm": "11.19.0"
+  },
+  "original_reproduction": {
+    "node": "v24.21.0",
+    "original_head": "4dac32fba98d0031ebee9ce6d542263e25b0d322",
+    "preflight": "NOT_EXECUTED",
+    "candidateEvaluated": true,
+    "providerCalls": 0
+  },
+  "regression": "Top-level candidate marker absent during hostless/approved preflight and denied execution; present after exact approval via injected fake fetch. Existing tamper, strict-grant, late-continuation, key and network guards retained.",
+  "full_test": {
+    "command": "npm test",
+    "exit": 0,
+    "counts": [
+      {
+        "suite": "Contract fixture suite",
+        "passed": 47,
+        "failed": 0
+      },
+      {
+        "suite": "Provider matrix fixture suite",
+        "passed": 21,
+        "failed": 0
+      },
+      {
+        "suite": "metering",
+        "passed": 28,
+        "failed": 0
+      },
+      {
+        "suite": "Security fixture suite",
+        "passed": 46,
+        "failed": 0
+      },
+      {
+        "suite": "Catalog fixture suite",
+        "passed": 19,
+        "failed": 0
+      },
+      {
+        "suite": "mock",
+        "passed": 37,
+        "failed": 0
+      },
+      {
+        "suite": "quote",
+        "passed": 29,
+        "failed": 0
+      },
+      {
+        "suite": "attempt-store",
+        "passed": 32,
+        "failed": 0
+      },
+      {
+        "suite": "comparison",
+        "passed": 9,
+        "failed": 0
+      },
+      {
+        "suite": "status",
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "suite": "prodigi-product-details",
+        "passed": 15,
+        "failed": 0
+      },
+      {
+        "suite": "png-inspection",
+        "passed": 47,
+        "failed": 0
+      },
+      {
+        "suite": "Prodigi sandbox adapter suite",
+        "passed": 58,
+        "failed": 0
+      },
+      {
+        "suite": "Prodigi callback reconciliation suite",
+        "passed": 71,
+        "failed": 0
+      },
+      {
+        "suite": "order-authorization",
+        "passed": 37,
+        "failed": 0
+      },
+      {
+        "suite": "package",
+        "passed": 166,
+        "failed": 0
+      }
+    ],
+    "total": 692,
+    "log_sha256": "78ab86f8673ce7f5fc32609f4bcf3e6dc57a09919b6c2e2ffb7c4e18989529d9",
+    "local_log_path": "/private/tmp/fc-r45-full-tests.log"
+  },
+  "focused": {
+    "command": "npm run test:prodigi-sandbox",
+    "exit": 0,
+    "passed": 58,
+    "failed": 0,
+    "external_network_calls": 0,
+    "log_sha256": "624f0a702f05f7644898e96fd0091733f3e2f6b93e68e4c09874190b044ff99b"
+  },
+  "retained_initial_failure": "The first repair run failed the old unloadable-artifact expectation: module resolution now intentionally occurs after host approval. Structural inventory failures still precede approval. Updated assertion preserves zero credentials, receipts and provider requests on load failure.",
+  "remaining": [
+    "Independent exact-base/head review and required CI.",
+    "PR45 current-main README reconciliation; existing PR52 is a separate preserved adoption proposal.",
+    "Genuine trusted host grant, approved account terms and per-request budget, secret reference and candidate binding.",
+    "Actual provider sandbox and integrated FUL evidence, separately owner-gated."
+  ],
+  "provider_calls": 0,
+  "real_credential_reads": 0,
+  "issue_closed": false,
+  "merge_performed": false
+}
