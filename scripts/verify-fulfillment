@@ -219,7 +219,7 @@ const catalogBlockers = [
 const quoteBlockers = [
   "shared-contracts #25 canonical FulfillmentQuote mapping and accepted schema pin are pending",
   "application consumer conformance and expected-result review are pending",
-  "scoped durable quote persistence is not implemented",
+  "optional local development quote persistence is implemented; accepted canonical and production scoped persistence remain unestablished",
   "no selected provider sandbox adapter, account-tested quote behavior, or live mode is established"
 ];
 const attemptStoreBlockers = [
@@ -685,7 +685,13 @@ const result = {
         consumerRevision: null,
         expectedResultsMatch: false
       },
-      scopedPersistence: "not_implemented",
+      scopedPersistence: "implemented_local_development_only",
+      scopedPersistenceDetails: {
+        localDevelopment: "optional_private_sqlite_store",
+        acceptedCanonical: "pending",
+        production: "not_established",
+        verification: "separate_test_quote_store_suite_not_executed_by_this_quote_verifier"
+      },
       sandboxReady: false,
       liveEnabled: false,
       releaseReady: false,
