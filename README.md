@@ -73,16 +73,18 @@ acceptance remains subject to the status limitations above.
 
 ## Quickstart
 
-Requires Node.js 24.21.0 ([`.node-version`](.node-version), `engines`) and npm 11.19.0 (`packageManager`). The one runtime dependency is the vendored owner package `@jevelopers/shared-contracts` 0.9.7 (`vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz`, a `file:` dependency that is imported only by the `./production-bundle` entry point, never by the package root). Dev dependencies are TypeScript 6.0.3 and `@types/node`.
+Requires Node.js 24.21.0 ([`.node-version`](.node-version), `engines`) and npm 11.19.0 (`packageManager`). The one runtime dependency is the vendored owner package `@jevelopers/shared-contracts` 0.9.7 (`vendor/shared-contracts/jevelopers-shared-contracts-0.9.7.tgz`, a `file:` dependency that is imported by the `./production-bundle` and development-only `./development-capability` entry points, never by the package root). Dev dependencies are TypeScript 6.0.3 and `@types/node`.
 
 ```sh
 git clone https://github.com/Jevelopers-neatHack-2026/fulfillment-connectors.git
 cd fulfillment-connectors
 npm ci      # locked install; may need registry access
-npm test    # builds dist/ and runs all 16 local fixture suites
+npm test    # builds dist/ and runs all 16 existing local fixture suites plus the development capability consumer checks
 ```
 
 No test calls a provider or another repository.
+
+The development capability consumer and its limitations are documented in [the catalog guide](docs/catalog.md#development-canonical-consumer).
 
 There is no standalone HTTP server or `npm start` script. Consumers import the compiled
 ESM package and supply their runtime ports. To build without running suites, use
