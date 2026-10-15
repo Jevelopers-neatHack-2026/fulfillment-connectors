@@ -791,7 +791,7 @@ export function register(define) {
   define("static.single-owner-import-site", () => {
     const importers = srcFiles().filter((name) => /@jevelopers\/shared-contracts/.test(read(`src/${name}`).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").replace(/^\s*\*.*$/gm, "")) &&
       /from\s+["']@jevelopers\/shared-contracts/.test(read(`src/${name}`)));
-    assert.deepEqual(importers, ["production-bundle-owner.ts"]);
+    assert.deepEqual(importers.sort(), ["capability-consumer.ts", "production-bundle-owner.ts"]);
     assert.equal(read("src/production-bundle-owner.ts").match(/from "@jevelopers\/shared-contracts[^"]*"/g).length, 1);
     assert.ok(read("src/production-bundle-owner.ts").includes('"@jevelopers/shared-contracts/production-operations"'));
   });
@@ -817,10 +817,13 @@ export function register(define) {
       }
     }
     assert.ok(!seen.has("production-bundle.js") && !seen.has("production-bundle-owner.js"));
+    assert.ok(!seen.has("capability-consumer.js") && !seen.has("quote-store.js"));
     assert.ok(seen.has("production-bundle-contract.js"));
     assert.ok(![...bareImports].some((specifier) => specifier.startsWith("@jevelopers/")), [...bareImports].join(","));
     const manifest = JSON.parse(read("package.json"));
-    assert.deepEqual(Object.keys(manifest.exports), [".", "./production-bundle"]);
+    assert.deepEqual(Object.keys(manifest.exports), [".", "./production-bundle", "./development-capability", "./development-quote-store"]);
+    assert.equal(manifest.exports["./development-capability"].import, "./dist/capability-consumer.js");
+    assert.equal(manifest.exports["./development-quote-store"].import, "./dist/quote-store.js");
     assert.equal(manifest.exports["./production-bundle"].import, "./dist/production-bundle.js");
     assert.equal(manifest.exports["."].import, "./dist/index.js");
     assert.ok(!/production-bundle-owner|production-bundle\.js/.test(read("src/index.ts")));

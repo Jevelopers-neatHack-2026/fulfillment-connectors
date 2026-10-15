@@ -1,6 +1,6 @@
 # FC-01 runtime foundation
 
-This branch provides a typed, injected worker-runtime foundation. It does not include a production provider adapter or persistence implementation, canonical upstream schemas, an issuer or finance integration, sandbox credentials, or a live mode. Compatibility with the application worker has not been verified: the repository began as documentation only, and no consumer package or accepted runtime pin was available to test against.
+This repository provides a typed, injected worker-runtime foundation. The generic runtime has no production provider wiring or production durable attempt store; its provider, transport, attempt-persistence, authorization, budget and usage ports are injected. Separate source modules include a simulated TicketStub-shaped order-authorization consumer and a Prodigi v4 sandbox adapter with offline fixture tests for quote, order creation and order retrieval. The sandbox adapter has not been run against a provider account, and the provider matrix records accountTested as false. The app worker has not been tested against the connector runtime; the simulated consumer tests use a fake issuer/HTTP port and do not establish app-server conformance. Canonical upstream pins, finance integration, sandbox credentials and live mode remain absent.
 
 ## Runtime and commands
 
