@@ -1,5 +1,5 @@
 /**
- * The ONLY module that imports `@jevelopers/shared-contracts`. It wraps the exact owner 0.9.7 byte-verification
+ * The bundle module that imports `@jevelopers/shared-contracts`. It wraps the exact owner 0.9.7 byte-verification
  * API without redefining any owner schema, canonical form, hash, ZIP rule or verdict:
  *
  * - `verifyProductionBundleFiles` is the sole authority for inventory, canonical manifest, detached protocol,

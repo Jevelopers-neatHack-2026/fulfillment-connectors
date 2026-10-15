@@ -67,3 +67,41 @@ npm test
 The stable simulated evidence wrapper is `npm run verify:catalog` (or `./scripts/verify-fulfillment --suite catalog --mode simulated --evidence-dir evidence/FC-03`). A passing result means only that the private offline fixture checks passed. Its `catalogAssessment` is a local verification report, not a capability or print-spec schema; it records exact local check counts, keeps FC-03 completion partial, and reports the canonical shared-contracts pin and print-production #6 review as pending. Sandbox readiness remains false and separate from local producer checks; no provider, account, order, or artifact boundary is invoked. Invalid modes fail closed, and sandbox/live suites retain their existing prerequisite failures.
 
 This is local simulated evidence only. It makes zero provider calls, has no live or sandbox account evidence, does not consume a ProductionBundle, does not mutate or construct approved artifacts, and does not close FC-03.1–3 or the dependent sandbox/release gates. Exact canonical fields, schema pin, accepted fixtures, and print-production #6 review remain upstream handoffs.
+
+
+## Development canonical consumer
+
+`@jevelopers/fulfillment-connectors/development-capability` exports
+`discoverDevelopmentCapability(source, context)` for private offline development.
+It uses the existing vendored shared-contracts 0.9.7 archive (source
+`d432ad5c895a67155affeaa05cd8423c758d95c3`, SHA256
+`771a9f565ea9df87a4c08e6e6d5ede422d2a5926182a95be082dc8ed7b8c4c43`).
+This implements the previously pending single-capture mapping requested in
+shared-contracts #32 and fulfillment #3/#8; the earlier private-only observations
+above remain historical descriptions of the original catalog slice.
+
+The source is read exactly once. `captureCatalogSnapshot` owns and freezes the raw
+private input before normalization. The canonical owner's `adaptFulfillmentCatalogV1`
+receives that same capture, independently supplied UUID tenant/project scope, and
+an explicit UTC clock. The owner checks `FulfillmentCapabilitySnapshot/1.0.0` and
+`PrintSpec/1.0.0`; canonical identities are recomputed by the owner and never copied
+from private normalized hashes. The package root does not load the owner package.
+
+Success returns both snapshots with `eligibility: not_established`. Missing trim,
+printable, outer-frame and inset-basis geometry remain unknown. Source hashes and
+caller evidence labels do not authenticate a supplier. Scope is host-owned; the
+caller must authenticate it before invoking this development API. Invalid context
+is refused before reading the source; malformed input/source errors and canonical
+refusals produce only fixed safe codes. There are no quote, order or finance ports.
+The legacy bundle/quote/authorization translations remain explicitly refused by
+the pinned owner. No accepted boundary mapping or runtime dispatch gate is changed.
+
+Run `npm run test:development-capability`. Its preloaded network guard covers all
+Node outbound paths before module evaluation. Tests use the actual alpha/beta
+source inputs through connector discovery and owner validators, check exact units,
+separate identities, scope/tamper/drift/freshness, immutable capture, unknowns and
+legacy refusals. These are consumer development checks, not a domain ACK or
+release acceptance. Named producer/consumer review, accepted pins, print-production
+#6 geometry/format agreement and genuine product/host authority remain pending.
+The unrelated owner 0.9.7 byte-helper hold SC-PFB-PARENT-LEGACY009 remains unchanged;
+this capability-only API never invokes those byte helpers.
