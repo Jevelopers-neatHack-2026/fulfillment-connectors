@@ -17,7 +17,7 @@ const checkedAt = "2026-10-10";
 
 export const PRODIGI_SANDBOX_BASE_URL = "https://api.sandbox.prodigi.com/v4.0" as const;
 
-export type SandboxOperation = "quote" | "submit" | "status";
+export type SandboxOperation = "quote" | "submit" | "status" | "productDetails";
 
 /**
  * Identifier the offline-tested Prodigi v4 sandbox adapter presents to the
@@ -34,8 +34,24 @@ export interface SandboxRoute {
 export const PRODIGI_SANDBOX_OPERATION_ENDPOINTS: Readonly<Record<SandboxOperation, SandboxRoute>> = deepFreeze({
   quote: { method: "POST", path: "/v4.0/quotes" },
   submit: { method: "POST", path: "/v4.0/Orders" },
-  status: { method: "GET", path: "/v4.0/orders/{prodigi_order_id}" }
+  status: { method: "GET", path: "/v4.0/orders/{prodigi_order_id}" },
+  productDetails: { method: "GET", path: "/v4.0/products/{sku}" }
 });
+
+/**
+ * The only selection the sandbox product read may name: the owner-delegated
+ * validation SKU, destination and shipping method (integration-evals decision
+ * 0003 R1-R3). The read is a validation of exactly this tuple, never a lookup of
+ * an arbitrary SKU, so the policy refuses any other tuple for `productDetails`.
+ */
+export const PRODIGI_SANDBOX_PRODUCT_READ_SELECTION = Object.freeze({
+  sku: "GLOBAL-PHO-4X6",
+  destinationCountryCode: "US",
+  shippingMethod: "Standard"
+} as const);
+
+/** The one concrete path the product read may request (the template above with the fixed SKU). */
+export const PRODIGI_SANDBOX_PRODUCT_READ_PATH = "/v4.0/products/GLOBAL-PHO-4X6" as const;
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
@@ -92,7 +108,7 @@ export const PROVIDER_ENVIRONMENT_MATRIX = deepFreeze({
         implementation: "offline_fixture_tested",
         accountTested: false,
         callPermittedWhen: "evaluateProviderPolicy returns sandbox_call_permitted: the request names this adapter, uses the sandbox host and credential class, and an injected verifier confirms the owner decision.",
-        details: "Quote, order-create and order-read adapter covered by synthetic fixtures only. No request has been sent to Prodigi; per-operation implementation and accountTested fields stay unchanged until sandbox evidence exists."
+        details: "Quote, order-create, order-read and fixed-selection product-details adapter covered by synthetic fixtures only. No request has been sent to Prodigi; per-operation implementation and accountTested fields stay unchanged until sandbox evidence exists."
       },
       documentation: {
         checkedAt,
@@ -113,6 +129,7 @@ export const PROVIDER_ENVIRONMENT_MATRIX = deepFreeze({
         quote: { documentation: "documented", implementation: "not_implemented", accountTested: false, details: "POST /v4.0/quotes is documented; exact quote semantics, selected product, and sandbox behavior have not been tested against an account." },
         submit: { documentation: "documented", implementation: "not_implemented", accountTested: false, details: "POST /v4.0/Orders is documented; order creation can enter fulfillment, so only a future approved sandbox path may be considered." },
         status: { documentation: "documented", implementation: "not_implemented", accountTested: false, details: "GET /v4.0/orders/{id} is documented. Complete means shipping notifications for all items, not proof of delivery." },
+        productDetails: { documentation: "documented", implementation: "not_implemented", accountTested: false, details: "GET /v4.0/products/{sku} is documented. The adapter method exists and is offline-fixture-tested for the single owner-delegated validation SKU only; it needs a trusted owner-action grant, has never been sent to Prodigi, and proves no account access, terms or cost." },
         cancel: { documentation: "conditional", implementation: "not_implemented", accountTested: false, details: "Cancellation is conditional on per-order action availability and fulfillment state; fees/refunds may vary. Excluded from the initial sandbox slice." },
         webhook: { documentation: "not_established", implementation: "not_implemented", accountTested: false, details: "CloudEvents callbacks are documented; authenticity is not established by the inspected reference. Use trusted polling until an accepted verification policy exists." }
       },
@@ -201,6 +218,7 @@ export type ProviderPolicyReason =
   | "decision_verifier_unavailable"
   | "decision_unverified"
   | "decision_does_not_match_request"
+  | "product_read_selection_not_allowed"
   | "provider_adapter_not_implemented";
 
 export interface ProviderPolicyAssessment {
@@ -356,7 +374,7 @@ export async function evaluateProviderPolicy(
   if (fields.credentialClass !== "sandbox") {
     return assessment("blocked", "sandbox", "prodigi", false, ["sandbox_credential_class_required"]);
   }
-  if (fields.operation !== "quote" && fields.operation !== "submit" && fields.operation !== "status") {
+  if (fields.operation !== "quote" && fields.operation !== "submit" && fields.operation !== "status" && fields.operation !== "productDetails") {
     return assessment("blocked", "sandbox", "prodigi", false, ["sandbox_operation_not_in_scope"]);
   }
   const operation: SandboxOperation = fields.operation;
@@ -371,6 +389,13 @@ export async function evaluateProviderPolicy(
   }
   if (typeof fields.decisionReference !== "string" || fields.decisionReference.trim() === "") {
     return assessment("blocked", "sandbox", "prodigi", false, ["decision_reference_required"]);
+  }
+  if (operation === "productDetails" && (
+    fields.sku !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.sku ||
+    fields.destinationCountryCode !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.destinationCountryCode ||
+    fields.shippingMethod !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.shippingMethod
+  )) {
+    return assessment("blocked", "sandbox", "prodigi", false, ["product_read_selection_not_allowed"]);
   }
   if (verifier === undefined || (typeof verifier !== "object" && typeof verifier !== "function") || verifier === null) {
     return assessment("blocked", "sandbox", "prodigi", false, ["decision_verifier_unavailable"]);
@@ -413,7 +438,9 @@ export async function evaluateProviderPolicy(
     verified.shippingMethod !== request.shippingMethod ||
     verified.credentialClass !== request.credentialClass ||
     verified.productAndDestinationApproved !== true ||
-    verified.sandboxAccountAccessConfirmed !== true
+    // The first product read is itself the first test of account access, so it
+    // must not require (or accept as proof) an account-access attestation.
+    (operation !== "productDetails" && verified.sandboxAccountAccessConfirmed !== true)
   ) {
     return assessment("blocked", "sandbox", "prodigi", false, ["decision_does_not_match_request"]);
   }

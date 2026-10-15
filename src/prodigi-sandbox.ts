@@ -4,11 +4,14 @@ import {
   PRODIGI_SANDBOX_ADAPTER_ID,
   PRODIGI_SANDBOX_BASE_URL,
   PRODIGI_SANDBOX_OPERATION_ENDPOINTS,
+  PRODIGI_SANDBOX_PRODUCT_READ_PATH,
+  PRODIGI_SANDBOX_PRODUCT_READ_SELECTION,
   type SandboxDecisionVerifier,
   type SandboxOperation
 } from "./provider-matrix.js";
 import { withServerSecret, type ServerSecretSource } from "./security.js";
 import { PRODIGI_SANDBOX_SECRET_BINDING } from "./prodigi-secrets.js";
+import { decodeProdigiProductDetails, prodigiProductDetailsPath, type ProdigiProductDetails } from "./prodigi-product-details.js";
 import type { BoundedQuotePort, QuoteProviderCallContext, QuoteProviderRequest, QuoteUnknownReason } from "./quotes.js";
 import type { StatusResult } from "./types.js";
 
@@ -26,6 +29,9 @@ import type { StatusResult } from "./types.js";
 
 export const PRODIGI_SANDBOX_ORIGIN = "https://api.sandbox.prodigi.com" as const;
 
+/** The one URL the sandbox product read may request. */
+export const PRODIGI_SANDBOX_PRODUCT_READ_URL = `${PRODIGI_SANDBOX_ORIGIN}${PRODIGI_SANDBOX_PRODUCT_READ_PATH}` as const;
+
 export type ProdigiShippingMethod = "Budget" | "Standard" | "StandardPlus" | "Express" | "Overnight";
 /** Create-quote spelling: the quote reference lists these lowercase values. */
 export type ProdigiQuoteShippingMethod = "budget" | "standard" | "standardplus" | "express" | "overnight";
@@ -42,6 +48,12 @@ export interface ProdigiHttpRequest {
 export interface ProdigiHttpResponse {
   readonly status: number;
   readonly bodyText: string;
+  /**
+   * Native bytes the port actually received, counted while streaming and before
+   * any decoding. Optional; when present, the product read refuses a value over
+   * 1 MiB before it parses anything.
+   */
+  readonly bodyBytes?: number;
 }
 
 /** Transport port. Tests inject recorded fixtures; production may use `createFetchProdigiHttpPort`. */
@@ -66,6 +78,82 @@ export interface ProdigiSandboxClientOptions {
   /** Secret reference name; defaults to `prodigi/sandbox/api-key`. Never a raw key. */
   readonly secretReference?: string;
   readonly timeoutMs?: number;
+  /**
+   * Trusted-host port that resolves the owner-action references of the one
+   * sandbox product read. Required by `getProductDetails`; absent means every
+   * product read fails closed with `grant_unverified` before any key is read.
+   */
+  readonly productReadGrantVerifier?: SandboxProductReadGrantVerifier;
+  /** Clock for grant expiry. Defaults to `Date.now`. */
+  readonly now?: () => number;
+}
+
+/**
+ * Opaque references naming the single trusted owner-action approval of one
+ * product read. They are identifiers, never credentials, and a reference that
+ * merely exists is not authority: only the trusted host's verification is.
+ */
+export interface ProdigiProductReadReferences {
+  /** Explicit owner permission naming this one request. */
+  readonly ownerPermissionReference: string;
+  /** The actually accepted sandbox account terms. */
+  readonly accountTermsReference: string;
+  /** The per-request cost budget. Request cost is unknown, never assumed zero. */
+  readonly requestCostBudgetReference: string;
+  /** `sha256:<64 hex>` of the exclusive receipt location this one request is bound to. */
+  readonly receiptBinding: string;
+  /** 40-hex commit the run claims to execute. The trusted host checks it against the revision the owner approved. */
+  readonly sourceRevision: string;
+  /**
+   * 64-hex digest of the exact built code that will run (the complete `dist/` inventory plus the command-line
+   * controls), computed by the caller from the bytes it then loads. It is a CANDIDATE: only the trusted host can
+   * say it is the digest the owner approved, by echoing it.
+   */
+  readonly builtArtifactSha256: string;
+  /** 64-hex digest of the owner packet the approval refers to. */
+  readonly ownerPacketSha256: string;
+}
+
+export interface SandboxProductReadGrantRequest extends ProdigiProductReadReferences {
+  readonly operation: "productDetails";
+  readonly providerId: "prodigi";
+  readonly apiVersion: "v4.0";
+  readonly credentialClass: "sandbox";
+  readonly decisionReference: string;
+  readonly sku: string;
+  readonly destinationCountryCode: string;
+  readonly shippingMethod: string;
+  readonly method: "GET";
+  readonly url: string;
+  readonly maxProviderRequests: 1;
+  readonly maxRetries: 0;
+}
+
+/** What a trusted host returns after resolving every reference with its owning authority. */
+export interface VerifiedSandboxProductReadGrant extends SandboxProductReadGrantRequest {
+  readonly ownerPermissionVerified: true;
+  readonly accountTermsAccepted: true;
+  readonly requestCostBudgetApproved: true;
+  readonly singleUse: true;
+  /**
+   * The values the owner actually approved, stated by the host from its own trusted context (the approved owner
+   * packet), NOT copied from the request by the library. A grant is accepted only when each equals the candidate the
+   * run presented, so a host that merely echoes the request, or never looked at the digest, cannot approve it.
+   */
+  readonly approvedSourceRevision: string;
+  readonly approvedBuiltArtifactSha256: string;
+  readonly approvedOwnerPacketSha256: string;
+  /** ISO-8601 UTC time after which the grant is void. */
+  readonly expiresAt: string;
+}
+
+export interface SandboxProductReadGrantVerifier {
+  /**
+   * Resolve the references with their owning authorities and return the request
+   * echoed with the verified flags, or `undefined`. Must have no external side
+   * effect: it can run in a preflight and again just before the request.
+   */
+  verify(request: SandboxProductReadGrantRequest): Promise<VerifiedSandboxProductReadGrant | undefined>;
 }
 
 export type ProdigiSandboxErrorCode =
@@ -81,7 +169,9 @@ export type ProdigiSandboxErrorCode =
   | "rate_limited"
   | "provider_unavailable"
   | "timeout"
-  | "invalid_response";
+  | "invalid_response"
+  | "request_budget_exhausted"
+  | "grant_unverified";
 
 /** Whether the provider may have applied the request. Order creation uses `unknown` when uncertain. */
 export type ProdigiSideEffectState = "not_dispatched" | "possible" | "confirmed" | "unknown";
@@ -99,7 +189,9 @@ const ERROR_MESSAGES: Readonly<Record<ProdigiSandboxErrorCode, string>> = {
   rate_limited: "Prodigi rate-limited the request.",
   provider_unavailable: "Prodigi was unavailable or returned an unexpected status.",
   timeout: "The Prodigi request timed out.",
-  invalid_response: "The Prodigi response is invalid or unsupported."
+  invalid_response: "The Prodigi response is invalid or unsupported.",
+  request_budget_exhausted: "The one permitted Prodigi product read was already used.",
+  grant_unverified: "The trusted owner-action grant for the Prodigi product read could not be verified."
 };
 
 export class ProdigiSandboxError extends Error {
@@ -132,6 +224,13 @@ const MAX_RESPONSE_CHARS = 1_048_576;
 const MAX_RESPONSE_BYTES = 1_048_576;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 60_000;
+/** The product read has its own, shorter hard deadline. */
+const PRODUCT_READ_DEFAULT_TIMEOUT_MS = 15_000;
+const PRODUCT_READ_MAX_TIMEOUT_MS = 30_000;
+const SHA256_BINDING_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const REVISION_PATTERN = /^[a-f0-9]{40}$/u;
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
+const GRANT_EXPIRY_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/u;
 
 const SHIPPING_METHODS: Readonly<Record<string, ProdigiShippingMethod>> = Object.freeze({
   budget: "Budget",
@@ -622,11 +721,14 @@ interface SendOutcome {
 function classifyHttpFailure(status: number, operation: OperationKey): ProdigiSandboxError {
   // For order creation, only explicit client errors prove the order was not created.
   const ambiguous: ProdigiSideEffectState = operation === "submit" ? "unknown" : "not_dispatched";
-  if (status === 401 || status === 403) return new ProdigiSandboxError("authentication_failed", "not_dispatched", status);
-  if (status === 400) return new ProdigiSandboxError("validation_failed", "not_dispatched", status);
-  if (status === 404) return new ProdigiSandboxError("not_found", "not_dispatched", status);
-  if (status === 429) return new ProdigiSandboxError("rate_limited", "not_dispatched", status);
-  return new ProdigiSandboxError("provider_unavailable", ambiguous, status);
+  // The product read always reached the provider when a status came back, so it
+  // never reports `not_dispatched` after the request left the port.
+  const answered: ProdigiSideEffectState = operation === "productDetails" ? "possible" : "not_dispatched";
+  if (status === 401 || status === 403) return new ProdigiSandboxError("authentication_failed", answered, status);
+  if (status === 400) return new ProdigiSandboxError("validation_failed", answered, status);
+  if (status === 404) return new ProdigiSandboxError("not_found", answered, status);
+  if (status === 429) return new ProdigiSandboxError("rate_limited", answered, status);
+  return new ProdigiSandboxError("provider_unavailable", operation === "productDetails" ? "possible" : ambiguous, status);
 }
 
 export class ProdigiSandboxClient {
@@ -637,6 +739,10 @@ export class ProdigiSandboxClient {
   readonly #enabled: boolean;
   readonly #secretReference: string;
   readonly #timeoutMs: number;
+  readonly #productReadTimeoutMs: number;
+  readonly #productReadGrantVerifier: SandboxProductReadGrantVerifier | undefined;
+  readonly #now: () => number;
+  #productReadClaimed = false;
 
   constructor(options: ProdigiSandboxClientOptions) {
     if (options === null || typeof options !== "object") throw new ProdigiSandboxError("invalid_input", "not_dispatched");
@@ -664,6 +770,12 @@ export class ProdigiSandboxClient {
     this.#enabled = options.sandboxCallsEnabled === true;
     this.#secretReference = secretReference;
     this.#timeoutMs = timeoutMs;
+    this.#productReadTimeoutMs = Math.min(options.timeoutMs ?? PRODUCT_READ_DEFAULT_TIMEOUT_MS, PRODUCT_READ_MAX_TIMEOUT_MS);
+    const grantVerifier = options.productReadGrantVerifier;
+    if (grantVerifier !== undefined && (grantVerifier === null || typeof grantVerifier !== "object")) throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+    this.#productReadGrantVerifier = grantVerifier;
+    if (options.now !== undefined && typeof options.now !== "function") throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+    this.#now = options.now ?? Date.now;
   }
 
   get decision(): ProdigiSandboxDecision {
@@ -706,6 +818,123 @@ export class ProdigiSandboxClient {
     return projectOrderResponse(result, ["ok"], "not_dispatched");
   }
 
+  /**
+   * Reads Product Details for the verified decision SKU, which must be the
+   * owner-delegated validation selection. There is no SKU, URL or host
+   * parameter. The client permits exactly one call: the claim is taken
+   * synchronously, before any await, and is never released, so a retry or a
+   * concurrent second call fails with `request_budget_exhausted` before any
+   * gate, key read or port call. Once the request has left the port every
+   * failure reports `sideEffectState: "possible"`, never `not_dispatched`.
+   */
+  async getProductDetails(references: ProdigiProductReadReferences, signal?: AbortSignal): Promise<ProdigiProductDetails> {
+    if (this.#productReadClaimed) throw new ProdigiSandboxError("request_budget_exhausted", "not_dispatched");
+    this.#productReadClaimed = true;
+    const grantRequest = this.#productReadGrantRequest(references);
+    const path = prodigiProductDetailsPath(this.#decision.sku);
+    // One hard deadline covers the whole call: the verifiers and the secret source as well as the port. Its abort
+    // signal is what stops a continuation that resumes after the deadline from ever dispatching.
+    const state: DispatchState = { dispatched: false };
+    const deadline = new AbortController();
+    const onCallerAbort = (): void => deadline.abort();
+    try {
+      signal?.addEventListener("abort", onCallerAbort, { once: true });
+    } catch {
+      throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+    }
+    let sent: { readonly body: unknown; readonly status: number };
+    try {
+      sent = await sendWithDeadline(
+        () => this.#dispatch("productDetails", "GET", path, undefined, isAborted(signal) ? AbortSignal.abort() : deadline.signal, grantRequest, state),
+        this.#productReadTimeoutMs,
+        () => deadline.abort()
+      ) as { readonly body: unknown; readonly status: number };
+    } catch (error) {
+      if (error instanceof DeadlineExceeded) throw new ProdigiSandboxError("timeout", state.dispatched ? "possible" : "not_dispatched");
+      throw error;
+    } finally {
+      try {
+        signal?.removeEventListener("abort", onCallerAbort);
+      } catch {
+        // Listener cleanup cannot change the outcome.
+      }
+    }
+    try {
+      return decodeProdigiProductDetails(sent.body, this.#decision.sku);
+    } catch {
+      throw new ProdigiSandboxError("invalid_response", "possible", sent.status);
+    }
+  }
+
+  #productReadGrantRequest(references: ProdigiProductReadReferences): SandboxProductReadGrantRequest {
+    if (references === null || typeof references !== "object") return invalidInput();
+    const ownerPermissionReference = boundedText(references.ownerPermissionReference, 100, false);
+    const accountTermsReference = boundedText(references.accountTermsReference, 100, false);
+    const requestCostBudgetReference = boundedText(references.requestCostBudgetReference, 100, false);
+    const receiptBinding = boundedText(references.receiptBinding, 71, false);
+    const sourceRevision = boundedText(references.sourceRevision, 40, false);
+    const builtArtifactSha256 = boundedText(references.builtArtifactSha256, 64, false);
+    const ownerPacketSha256 = boundedText(references.ownerPacketSha256, 64, false);
+    if (!REFERENCE_PATTERN.test(ownerPermissionReference) || !REFERENCE_PATTERN.test(accountTermsReference) ||
+        !REFERENCE_PATTERN.test(requestCostBudgetReference) || !SHA256_BINDING_PATTERN.test(receiptBinding) ||
+        !REVISION_PATTERN.test(sourceRevision) || !SHA256_HEX_PATTERN.test(builtArtifactSha256) || !SHA256_HEX_PATTERN.test(ownerPacketSha256)) {
+      return invalidInput();
+    }
+    const decision = this.#decision;
+    if (decision.sku !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.sku ||
+        decision.destinationCountryCode !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.destinationCountryCode ||
+        decision.shippingMethod !== PRODIGI_SANDBOX_PRODUCT_READ_SELECTION.shippingMethod) {
+      throw new ProdigiSandboxError("decision_mismatch", "not_dispatched");
+    }
+    return Object.freeze({
+      operation: "productDetails",
+      providerId: "prodigi",
+      apiVersion: "v4.0",
+      credentialClass: "sandbox",
+      decisionReference: decision.decisionReference,
+      sku: decision.sku,
+      destinationCountryCode: decision.destinationCountryCode,
+      shippingMethod: decision.shippingMethod,
+      method: "GET",
+      url: PRODIGI_SANDBOX_PRODUCT_READ_URL,
+      maxProviderRequests: 1,
+      maxRetries: 0,
+      ownerPermissionReference,
+      accountTermsReference,
+      requestCostBudgetReference,
+      receiptBinding,
+      sourceRevision,
+      builtArtifactSha256,
+      ownerPacketSha256
+    });
+  }
+
+  /** Throws `grant_unverified` unless the trusted host echoes this exact request with every flag true and an unexpired grant. */
+  async #verifyProductReadGrant(request: SandboxProductReadGrantRequest, stillLive: () => void): Promise<void> {
+    const fail = (): never => {
+      throw new ProdigiSandboxError("grant_unverified", "not_dispatched");
+    };
+    const verifier = this.#productReadGrantVerifier;
+    if (verifier === undefined) return fail();
+    let raw: unknown;
+    try {
+      const verify: unknown = verifier.verify;
+      if (typeof verify !== "function") return fail();
+      raw = await verify.call(verifier, request);
+    } catch {
+      return fail();
+    }
+    // An answer that arrives after the deadline or an abort is discarded: nothing may follow it.
+    stillLive();
+    let now: number;
+    try {
+      now = this.#now();
+    } catch {
+      return fail();
+    }
+    if (!isVerifiedSandboxProductReadGrant(request, raw, now)) return fail();
+  }
+
   #assertMatchesDecision(sku: string, countryCode: string, shippingMethod: ProdigiShippingMethod): void {
     if (sku !== this.#decision.sku || countryCode !== this.#decision.destinationCountryCode || shippingMethod !== this.#decision.shippingMethod) {
       throw new ProdigiSandboxError("decision_mismatch", "not_dispatched");
@@ -713,8 +942,27 @@ export class ProdigiSandboxClient {
   }
 
   async #send(operation: OperationKey, method: "GET" | "POST", path: string, body: unknown, signal: AbortSignal | undefined): Promise<unknown> {
+    return (await this.#dispatch(operation, method, path, body, signal, undefined)).body;
+  }
+
+  async #dispatch(
+    operation: OperationKey,
+    method: "GET" | "POST",
+    path: string,
+    body: unknown,
+    signal: AbortSignal | undefined,
+    grantRequest: SandboxProductReadGrantRequest | undefined,
+    state?: DispatchState
+  ): Promise<{ readonly body: unknown; readonly status: number }> {
     if (!this.#enabled) throw new ProdigiSandboxError("sandbox_calls_disabled", "not_dispatched");
     if (isAborted(signal)) throw new ProdigiSandboxError("aborted", "not_dispatched");
+    // The product read re-checks the deadline/abort signal after EVERY await and before each trusted-host call and the
+    // key load, so a continuation that resumes after the deadline can start no further step. A step that was already
+    // running cannot be undone; nothing after it may run.
+    const productReadLive = operation === "productDetails";
+    const stillLive = (): void => {
+      if (productReadLive && isAborted(signal)) throw new ProdigiSandboxError("aborted", "not_dispatched");
+    };
     const policy = await evaluateProviderPolicy({
       adapterId: PRODIGI_SANDBOX_ADAPTER_ID,
       mode: "sandbox",
@@ -727,6 +975,7 @@ export class ProdigiSandboxClient {
       shippingMethod: this.#decision.shippingMethod,
       decisionReference: this.#decision.decisionReference
     }, this.#verifier);
+    stillLive();
     // The policy is the source of truth: only `sandbox_call_permitted` with
     // `providerCallPermitted: true` for this exact route may dispatch.
     if (policy.status !== "sandbox_call_permitted" || policy.providerCallPermitted !== true ||
@@ -735,21 +984,33 @@ export class ProdigiSandboxClient {
     }
     // Paths come only from the fixed endpoint table; the origin is the fixed sandbox host.
     if (!path.startsWith("/v4.0/")) throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+    const productRead = operation === "productDetails";
+    if (productRead) {
+      // One concrete path only, and the trusted owner-action grant is resolved
+      // before the credential is ever loaded.
+      if (path !== PRODIGI_SANDBOX_PRODUCT_READ_PATH || grantRequest === undefined) throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+      stillLive();
+      await this.#verifyProductReadGrant(grantRequest, stillLive);
+      stillLive();
+    } else if (grantRequest !== undefined) {
+      throw new ProdigiSandboxError("invalid_input", "not_dispatched");
+    }
     const url = `${PRODIGI_SANDBOX_ORIGIN}${path}`;
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const http = this.#http;
-    const timeoutMs = this.#timeoutMs;
+    const timeoutMs = productRead ? this.#productReadTimeoutMs : this.#timeoutMs;
 
-    const uncertain: ProdigiSideEffectState = operation === "submit" ? "unknown" : "not_dispatched";
-    const dispatch: DispatchState = { dispatched: false };
+    const uncertain: ProdigiSideEffectState = uncertainState(operation);
+    const dispatch: DispatchState = state ?? { dispatched: false };
     let outcome: SendOutcome;
+    stillLive();
     try {
       outcome = await withServerSecret<SendOutcome>({
         providerId: "prodigi",
         secretReference: this.#secretReference,
         mode: "sandbox",
         source: this.#secrets,
-        use: async ({ secret }) => sendWithSecret(http, operation, method, url, payload, secret, timeoutMs, signal, dispatch)
+        use: async ({ secret }) => sendWithSecret(http, operation, method, url, payload, secret, timeoutMs, signal, dispatch, productRead)
       });
     } catch {
       // Once the request was handed to the port, the provider may have applied
@@ -758,8 +1019,99 @@ export class ProdigiSandboxClient {
       throw new ProdigiSandboxError("credential_unavailable", "not_dispatched");
     }
     if (!outcome.ok) throw outcome.error ?? new ProdigiSandboxError("provider_unavailable", uncertain);
-    return outcome.body;
+    return { body: outcome.body, status: outcome.status };
   }
+}
+
+/** The side-effect state once the request has been handed to the port and the outcome is uncertain. */
+function uncertainState(operation: OperationKey): ProdigiSideEffectState {
+  if (operation === "submit") return "unknown";
+  return operation === "productDetails" ? "possible" : "not_dispatched";
+}
+
+function plainDataRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return undefined;
+    const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") return undefined;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined || !("value" in descriptor)) return undefined;
+      result[key] = descriptor.value;
+    }
+    return result;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The client strict check of a trusted host's answer, repeated after the CLI bootstrap has independently approved
+ * loading the candidate: the grant must be a plain data record with no extra keys, echo every request field exactly,
+ * carry the four verified flags as `true`, and expire after `nowMs`.
+ */
+export function isVerifiedSandboxProductReadGrant(request: SandboxProductReadGrantRequest, raw: unknown, nowMs: number): boolean {
+  const grant = plainDataRecord(raw);
+  if (grant === undefined) return false;
+  const requestKeys = Object.keys(request) as (keyof SandboxProductReadGrantRequest)[];
+  const allowed = new Set<string>([...requestKeys, "ownerPermissionVerified", "accountTermsAccepted", "requestCostBudgetApproved", "singleUse",
+    "approvedSourceRevision", "approvedBuiltArtifactSha256", "approvedOwnerPacketSha256", "expiresAt"]);
+  if (Object.keys(grant).some((key) => !allowed.has(key))) return false;
+  for (const key of requestKeys) if (grant[key] !== request[key]) return false;
+  // The host's own statement of what was approved must equal what this run would execute.
+  if (grant.approvedSourceRevision !== request.sourceRevision || grant.approvedBuiltArtifactSha256 !== request.builtArtifactSha256 ||
+      grant.approvedOwnerPacketSha256 !== request.ownerPacketSha256) return false;
+  if (grant.ownerPermissionVerified !== true || grant.accountTermsAccepted !== true ||
+      grant.requestCostBudgetApproved !== true || grant.singleUse !== true) return false;
+  const expiresAt = grant.expiresAt;
+  if (typeof expiresAt !== "string" || !GRANT_EXPIRY_PATTERN.test(expiresAt)) return false;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && Number.isFinite(nowMs) && expiry > nowMs;
+}
+
+class DeadlineExceeded extends Error {}
+
+/**
+ * Settles with the first of the operation's own result and a hard deadline, even
+ * if a port or verifier ignores its AbortSignal. The operation's promise always
+ * gets a handler, so a late rejection is never unhandled, and the single timer
+ * is cleared on every path.
+ */
+function sendWithDeadline(send: () => Promise<unknown>, timeoutMs: number, onDeadline: () => void): Promise<unknown> {
+  return new Promise<unknown>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onDeadline();
+      reject(new DeadlineExceeded());
+    }, timeoutMs);
+    let attempt: Promise<unknown>;
+    try {
+      attempt = Promise.resolve(send());
+    } catch (error) {
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+      return;
+    }
+    attempt.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
 interface DispatchState {
@@ -784,9 +1136,10 @@ async function sendWithSecret(
   secret: string,
   timeoutMs: number,
   external: AbortSignal | undefined,
-  dispatch: DispatchState
+  dispatch: DispatchState,
+  productRead: boolean
 ): Promise<SendOutcome> {
-  const uncertain: ProdigiSideEffectState = operation === "submit" ? "unknown" : "not_dispatched";
+  const uncertain: ProdigiSideEffectState = uncertainState(operation);
   // The signal may have aborted while the policy or secret was resolving.
   if (isAborted(external)) return { ok: false, status: 0, error: new ProdigiSandboxError("aborted", "not_dispatched") };
   const controller = new AbortController();
@@ -797,7 +1150,8 @@ async function sendWithSecret(
     return { ok: false, status: 0, error: new ProdigiSandboxError("invalid_input", "not_dispatched") };
   }
   let timedOut = false;
-  const timer = setTimeout(() => {
+  // The product read is bounded by the whole-call deadline in `getProductDetails`, which also bounds a port that ignores the signal.
+  const timer = productRead ? undefined : setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
@@ -805,15 +1159,17 @@ async function sendWithSecret(
   if (payload !== undefined) headers["Content-Type"] = "application/json";
   let status: number;
   let text: unknown;
+  let declaredBytes: unknown;
   try {
     dispatch.dispatched = true;
-    const response: unknown = await http.send(Object.freeze({
+    const request = Object.freeze({
       method,
       url,
       headers: Object.freeze(headers),
       ...(payload === undefined ? {} : { body: payload }),
       signal: controller.signal
-    }));
+    });
+    const response: unknown = await http.send(request);
     // Every response field is read inside the try: a throwing getter after
     // dispatch is an uncertain outcome, never "not dispatched".
     if (response === null || typeof response !== "object") {
@@ -826,13 +1182,14 @@ async function sendWithSecret(
     status = rawStatus;
     if (status < 200 || status > 299) return { ok: false, status, error: classifyHttpFailure(status, operation) };
     text = (response as ProdigiHttpResponse).bodyText;
+    if (productRead) declaredBytes = (response as ProdigiHttpResponse).bodyBytes;
   } catch {
     const error = timedOut
       ? new ProdigiSandboxError("timeout", uncertain)
       : new ProdigiSandboxError("provider_unavailable", uncertain);
     return { ok: false, status: 0, error };
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
     try {
       external?.removeEventListener("abort", onAbort);
     } catch {
@@ -841,6 +1198,15 @@ async function sendWithSecret(
   }
   if (typeof text !== "string" || text.length === 0 || text.length > MAX_RESPONSE_CHARS) {
     return { ok: false, status, error: new ProdigiSandboxError("invalid_response", uncertain, status) };
+  }
+  if (productRead) {
+    // The read answers 200 only. Native byte counts are checked before the text
+    // is parsed: the port's own count when it gives one, then the UTF-8 length.
+    const bytesOk = declaredBytes === undefined ||
+      (typeof declaredBytes === "number" && Number.isSafeInteger(declaredBytes) && declaredBytes >= 0 && declaredBytes <= MAX_RESPONSE_BYTES);
+    if (status !== 200 || !bytesOk || Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
+      return { ok: false, status, error: new ProdigiSandboxError("invalid_response", uncertain, status) };
+    }
   }
   try {
     return { ok: true, status, body: JSON.parse(text) as unknown };
@@ -923,5 +1289,224 @@ export function createFetchProdigiHttpPort(fetchImpl: typeof fetch = globalThis.
       }
       return { status, bodyText: await readBoundedBody(response) };
     }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox product read: strict transport and receipt-safe projection
+
+function refusedProductReadRequest(): never {
+  throw new Error("refused");
+}
+
+/**
+ * Accepts only the one product-read request shape the client builds: GET, the
+ * exact fixed URL, exactly the `X-API-Key` and `Accept` headers, no body and an
+ * abort signal. Anything else is refused before it can reach a network port.
+ */
+function assertProductReadRequest(request: unknown): asserts request is ProdigiHttpRequest {
+  try {
+    if (request === null || typeof request !== "object") return refusedProductReadRequest();
+    const candidate = request as Partial<ProdigiHttpRequest>;
+    if (candidate.method !== "GET" || candidate.url !== PRODIGI_SANDBOX_PRODUCT_READ_URL || candidate.body !== undefined) return refusedProductReadRequest();
+    const signal: unknown = candidate.signal;
+    if (signal === null || typeof signal !== "object" || typeof (signal as AbortSignal).aborted !== "boolean") return refusedProductReadRequest();
+    const headers: unknown = candidate.headers;
+    if (headers === null || typeof headers !== "object" || Array.isArray(headers)) return refusedProductReadRequest();
+    const names = Object.keys(headers).sort();
+    const record = headers as Record<string, unknown>;
+    if (names.length !== 2 || names[0] !== "Accept" || names[1] !== "X-API-Key" || record.Accept !== "application/json" ||
+        typeof record["X-API-Key"] !== "string" || record["X-API-Key"].length === 0) return refusedProductReadRequest();
+  } catch {
+    return refusedProductReadRequest();
+  }
+}
+
+async function readCountedBody(response: Response): Promise<{ readonly text: string; readonly bytes: number }> {
+  const declared = response.headers?.get?.("content-length");
+  if (declared !== null && declared !== undefined && /^\d+$/u.test(declared) && Number(declared) > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    return { text: "", bytes: Number(declared) };
+  }
+  const body = response.body;
+  if (body === null || body === undefined) return { text: "", bytes: 0 };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    // The native byte count is checked before the chunk is kept or decoded.
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return { text: "", bytes: total };
+    }
+    chunks.push(value);
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { text: new TextDecoder().decode(joined), bytes: total };
+}
+
+/**
+ * Fetch-backed port for the one sandbox product read. It requests only the
+ * fixed URL (no redirect is followed, a 3xx throws), counts native response
+ * bytes before decoding, discards every non-2xx body, and reports the counted
+ * bytes as `bodyBytes`.
+ */
+export function createProdigiProductReadFetchPort(fetchImpl: typeof fetch = globalThis.fetch): ProdigiHttpPort {
+  return Object.freeze({
+    async send(request: ProdigiHttpRequest): Promise<ProdigiHttpResponse> {
+      assertProductReadRequest(request);
+      const response = await fetchImpl(PRODIGI_SANDBOX_PRODUCT_READ_URL, {
+        method: "GET",
+        headers: { "X-API-Key": request.headers["X-API-Key"] as string, Accept: "application/json" },
+        redirect: "error",
+        signal: request.signal
+      });
+      const status = response.status;
+      if (status < 200 || status > 299) {
+        await response.body?.cancel().catch(() => undefined);
+        return { status, bodyText: "", bodyBytes: 0 };
+      }
+      const { text, bytes } = await readCountedBody(response);
+      return { status, bodyText: text, bodyBytes: bytes };
+    }
+  });
+}
+
+/** What the one-shot transport itself observed, independent of how the client classified the outcome. */
+export interface ProdigiProductReadTransportSnapshot {
+  /** Calls into `send`, including refused ones. */
+  readonly attempts: number;
+  /** Requests forwarded to the inner port: 0 or 1, ever. */
+  readonly dispatched: number;
+  /** Attempts stopped before the inner port (second call or wrong request shape). */
+  readonly refused: number;
+  readonly state: "idle" | "pending" | "returned" | "threw";
+  readonly responseStatus: number | null;
+  /** Native response bytes: the port's own count, else the UTF-8 length of the body text. */
+  readonly responseBytes: number | null;
+}
+
+/**
+ * Wraps a port so that at most one request can ever reach it. The attempt
+ * counter is incremented synchronously, before anything else, so a second or
+ * concurrent call is refused before it can touch the inner port. The snapshot
+ * counts the dispatch itself, so a receipt stays accurate even when the
+ * response is later rejected as invalid.
+ */
+export function createOneShotProdigiProductReadPort(inner: ProdigiHttpPort): {
+  readonly port: ProdigiHttpPort;
+  snapshot(): ProdigiProductReadTransportSnapshot;
+} {
+  let attempts = 0;
+  let dispatched = 0;
+  let refused = 0;
+  let state: ProdigiProductReadTransportSnapshot["state"] = "idle";
+  let responseStatus: number | null = null;
+  let responseBytes: number | null = null;
+  const port: ProdigiHttpPort = Object.freeze({
+    async send(request: ProdigiHttpRequest): Promise<ProdigiHttpResponse> {
+      attempts += 1;
+      if (attempts > 1) {
+        refused += 1;
+        throw new Error("refused");
+      }
+      try {
+        assertProductReadRequest(request);
+      } catch {
+        refused += 1;
+        throw new Error("refused");
+      }
+      dispatched += 1;
+      state = "pending";
+      let response: ProdigiHttpResponse;
+      try {
+        response = await inner.send(request);
+      } catch (error) {
+        state = "threw";
+        throw error;
+      }
+      state = "returned";
+      try {
+        const status: unknown = response?.status;
+        responseStatus = typeof status === "number" && Number.isSafeInteger(status) ? status : null;
+        const counted: unknown = response?.bodyBytes;
+        const text: unknown = response?.bodyText;
+        responseBytes = typeof counted === "number" && Number.isSafeInteger(counted) && counted >= 0
+          ? counted
+          : typeof text === "string" ? Buffer.byteLength(text, "utf8") : null;
+      } catch {
+        // A hostile response object cannot change what was dispatched.
+      }
+      return response;
+    }
+  });
+  return Object.freeze({
+    port,
+    snapshot: (): ProdigiProductReadTransportSnapshot => Object.freeze({ attempts, dispatched, refused, state, responseStatus, responseBytes })
+  });
+}
+
+export interface ProdigiProductReadObservation {
+  readonly sku: string;
+  /** SHA-256 (hex) of the canonical JSON of the decoded Product Details DTO. */
+  readonly decodedSha256: string;
+  readonly productDimensions: { readonly width: number; readonly height: number; readonly units: string };
+  readonly attributeNames: readonly string[];
+  /** Values of the attribute named `finish`; empty when the product has none. */
+  readonly finishAttributeValues: readonly string[];
+  readonly variantCount: number;
+  readonly variantsShippingToUS: number;
+  readonly shipsToIncludesUS: boolean;
+  readonly printAreas: readonly { readonly name: string; readonly required: boolean }[];
+  /**
+   * Distinct `horizontalResolution` x `verticalResolution` pairs of the `default` print area across the variants
+   * that declare one. The public reference documents these as RECOMMENDED pixel dimensions. They are not a required
+   * bleed, template or customer print specification, and they are an observation only after a real response.
+   */
+  readonly defaultPrintAreaRecommendedPixelSizes: readonly { readonly horizontal: number; readonly vertical: number }[];
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+}
+
+/**
+ * Projects one decoded Product Details DTO to the facts a receipt may keep.
+ * It drops the description and copies no raw text beyond names and values the
+ * decoder already bounded; the hash covers the whole decoded DTO.
+ */
+export function projectProductReadObservation(details: ProdigiProductDetails): ProdigiProductReadObservation {
+  const finishKey = Object.keys(details.attributes).find((name) => name.toLowerCase() === "finish");
+  const finishes = finishKey === undefined ? [] : [...new Set(details.attributes[finishKey] ?? [])].sort();
+  const resolutions = new Map<string, { horizontal: number; vertical: number }>();
+  let shippingToUS = 0;
+  for (const variant of details.variants) {
+    if (variant.shipsTo.includes("US")) shippingToUS += 1;
+    const size = variant.printAreaSizes.default;
+    if (size !== undefined) resolutions.set(`${size.horizontalResolution}x${size.verticalResolution}`, { horizontal: size.horizontalResolution, vertical: size.verticalResolution });
+  }
+  return Object.freeze({
+    sku: details.sku,
+    decodedSha256: createHash("sha256").update(canonicalJson(details), "utf8").digest("hex"),
+    productDimensions: Object.freeze({ width: details.productDimensions.width, height: details.productDimensions.height, units: details.productDimensions.units }),
+    attributeNames: Object.freeze(Object.keys(details.attributes).sort()),
+    finishAttributeValues: Object.freeze(finishes),
+    variantCount: details.variants.length,
+    variantsShippingToUS: shippingToUS,
+    shipsToIncludesUS: shippingToUS > 0,
+    printAreas: Object.freeze(Object.keys(details.printAreas).sort().map((name) => Object.freeze({ name, required: details.printAreas[name]?.required === true }))),
+    defaultPrintAreaRecommendedPixelSizes: Object.freeze([...resolutions.values()]
+      .sort((a, b) => a.horizontal - b.horizontal || a.vertical - b.vertical).slice(0, 16).map((entry) => Object.freeze(entry)))
   });
 }

@@ -61,6 +61,8 @@ export {
   PRODIGI_SANDBOX_ADAPTER_ID,
   PRODIGI_SANDBOX_BASE_URL,
   PRODIGI_SANDBOX_OPERATION_ENDPOINTS,
+  PRODIGI_SANDBOX_PRODUCT_READ_PATH,
+  PRODIGI_SANDBOX_PRODUCT_READ_SELECTION,
   PROVIDER_ENVIRONMENT_MATRIX
 } from "./provider-matrix.js";
 export type {
@@ -202,13 +204,18 @@ export type {
 } from "./prodigi-secrets.js";
 export {
   createFetchProdigiHttpPort,
+  createOneShotProdigiProductReadPort,
+  createProdigiProductReadFetchPort,
   createProdigiQuotePort,
+  isVerifiedSandboxProductReadGrant,
   mapOrderRequest,
   mapQuoteRequest,
   PRODIGI_SANDBOX_ORIGIN,
+  PRODIGI_SANDBOX_PRODUCT_READ_URL,
   ProdigiSandboxClient,
   ProdigiSandboxError,
   projectOrderResponse,
+  projectProductReadObservation,
   projectQuoteResponse,
   toProdigiShippingMethod,
   toStatusResult
@@ -222,6 +229,9 @@ export type {
   ProdigiOrderObservation,
   ProdigiOrderRecipientInput,
   ProdigiOrderStage,
+  ProdigiProductReadObservation,
+  ProdigiProductReadReferences,
+  ProdigiProductReadTransportSnapshot,
   ProdigiProviderQuote,
   ProdigiQuoteMappingConfig,
   ProdigiQuoteShippingMethod,
@@ -231,7 +241,10 @@ export type {
   ProdigiShippingMethod,
   ProdigiSideEffectState,
   ProdigiSizing,
-  ProdigiStepState
+  ProdigiStepState,
+  SandboxProductReadGrantRequest,
+  SandboxProductReadGrantVerifier,
+  VerifiedSandboxProductReadGrant
 } from "./prodigi-sandbox.js";
 export {
   createInMemoryProdigiReconciliationStore,
