@@ -1,0 +1,84 @@
+{
+  "scope": "private_fixture_helper_only",
+  "baseRevision": "a1c04e6424626475c7c6db3d397cc6e3392c1600",
+  "mode": "simulated",
+  "billing_mode": "simulated",
+  "localNode": "22.16.0",
+  "localNpm": "10.9.2",
+  "pinnedToolchainUsed": false,
+  "baselineMethod": "Extract the unchanged source between export async function runFixtureClaimWithRetry( and function childEnvironment( from the verified original fixture blob; run it as the standalone relative module against the identical test file. No runtime substitute is executed.",
+  "originalBlobs": {
+    "tests/attempt-store-fixtures.mjs": "c631a6dfb026e2dcbc27f14185ffc57c140d3112",
+    "package.json": "0cd8cfbea6e131df8f0cd6ed94e3595464a760b6"
+  },
+  "extractedOriginalHelperSha256": "4f99530d4a19bcfe7f3eae702005e8d5e90d8867e00396c9081bd692e5fbcc1a",
+  "testedGitBlobs": {
+    "docs/fixture-retry-timing.md": "04ff67e69122af213b25c66153d643203a5a2a61",
+    "package.json": "53e8183ac8149657770d07171ed4818ed46ac1f9",
+    "tests/attempt-store-fixtures.mjs": "518ff36b7bb7e4af82e5ef50e93c99a8c8675526",
+    "tests/fixture-claim-retry.mjs": "edafa5aa053d2c183eef13f68d1fd2408fd2f83c",
+    "tests/fixture-claim-retry.test.mjs": "43c03264ac8238991aa92f9d54f3e43427a32954"
+  },
+  "commands": {
+    "baseline": "env -i PATH=\"$PATH\" node --test tests/fixture-claim-retry.test.mjs (isolated baseline module)",
+    "patched": "env -i PATH=\"$PATH\" node --test tests/fixture-claim-retry.test.mjs",
+    "npmFocused": "env -i PATH=\"$PATH\" npm run test:fixture-retry",
+    "syntax": "node --check <each changed .mjs>",
+    "graph": "entire graph search --repo . --profile full --query \"Reject backward clocks, fractional retry cutoff violations, and inconsistent retry evidence for FC06-AS-010\" (exit127; CLI unavailable)"
+  },
+  "runs": [
+    {
+      "id": "baseline",
+      "tests": 41,
+      "passed": 12,
+      "failed": 29,
+      "exit": 1
+    },
+    {
+      "id": "patched-v1",
+      "tests": 41,
+      "passed": 41,
+      "failed": 0,
+      "exit": 0
+    },
+    {
+      "id": "baseline-v2",
+      "tests": 43,
+      "passed": 12,
+      "failed": 31,
+      "exit": 1
+    },
+    {
+      "id": "patched-v2",
+      "tests": 43,
+      "passed": 43,
+      "failed": 0,
+      "exit": 0
+    }
+  ],
+  "stdoutSha256": {
+    "baseline-v2.stdout": "24fff3ace27dcb46925b7f73e5facf0a2ed48b8d9d8123fdb7d8a4b4cbafa8e9",
+    "baseline.stdout": "b87a7cfe21ac54a969e6783b84e0c16dc06da9e3db9b3f7e480b61cc7b2b41dc",
+    "graph-search.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "npm-focused.stdout": "f5095824fb5aaff33e0d8ea5bfb23528e0c5d2b932afe2d2c9160f9593825b21",
+    "patched-v1.stdout": "c4e4bd65e187b8ed11aebf2279be99e630fe71bfa0883e99bdb9ec1b0f81641b",
+    "patched-v2.stdout": "64ae0b4b10e941cbc24870b780b5c8c25d9895715d9b2fc9ebfd94a26f33837c",
+    "syntax-helper.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "syntax-reexport.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "syntax-tests.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "testStderrEmpty": true,
+  "limitations": [
+    "Direct git clone/ls-remote unavailable: DNS failure, exit128.",
+    "Focused source snapshot is not a full repository checkout.",
+    "Full pinned build, durable-store/process suites and all verifier commands not executed locally.",
+    "No OS network-denial assertion from these focused tests.",
+    "Independent review, required hosted checks and postmerge verification pending.",
+    "Original PR24/25 failures and historical advisory receipts remain unchanged."
+  ],
+  "externalProviderRequests": 0,
+  "canonicalAcceptance": false,
+  "issue11Complete": false,
+  "gate16Complete": false,
+  "epic1Complete": false
+}
