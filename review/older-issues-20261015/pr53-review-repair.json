@@ -1,0 +1,172 @@
+{
+  "reviewed_head": "0152dada96d233c814d7182dd1e6547eec90ea80",
+  "review_report_sha256": "a7a2718819e5b6f14256e65cecd0331f386efe63a04b0568ea56c2d72a60b59c",
+  "findings": {
+    "FC53-STORE-01": {
+      "state": "addressed_pending_independent_rereview",
+      "change": "Every open transactionally validates exact schema objects, DDL and table_xinfo column/type/nullability/key/hidden shape, including user_version1. Unexpected objects are rejected with a safe error and rollback.",
+      "regressions": [
+        "version1 extra table",
+        "extra view",
+        "extra index",
+        "trigger",
+        "missing table",
+        "extra column",
+        "nullable payload",
+        "wrong type",
+        "wrong key order",
+        "generated column",
+        "version0 with view"
+      ],
+      "preservation": "All malformed-schema regressions verify byte-identical database after refusal."
+    },
+    "FC53-EVIDENCE-01": {
+      "state": "addressed_pending_independent_rereview",
+      "change": "Quote assessment reports implemented_local_development_only and separates optional private SQLite implementation from pending canonical acceptance and unestablished production persistence. It explicitly states that this verifier does not execute the separate quote-store suite.",
+      "regenerated_receipt": "review/older-issues-20261015/pr53-repair-quote-result.json",
+      "receipt_sha256": "5a159d8041119f466c8fb9c417cdb03b8c78dd8ca2370284fefbf71f44ae10ce",
+      "supersedes": "Prior not_implemented quote-assessment assertion only; historical test results and receipts are preserved."
+    }
+  },
+  "runtime": {
+    "node": "24.21.0",
+    "npm": "11.19.0"
+  },
+  "validation": {
+    "full": {
+      "command": "npm test",
+      "exit": 0,
+      "passed": 697,
+      "suites": 18,
+      "counts": [
+        {
+          "suite": "Contract fixture suite",
+          "passed": 47,
+          "failed": 0
+        },
+        {
+          "suite": "Provider matrix fixture suite",
+          "passed": 20,
+          "failed": 0
+        },
+        {
+          "suite": "metering",
+          "passed": 28,
+          "failed": 0
+        },
+        {
+          "suite": "Security fixture suite",
+          "passed": 46,
+          "failed": 0
+        },
+        {
+          "suite": "Catalog fixture suite",
+          "passed": 19,
+          "failed": 0
+        },
+        {
+          "suite": "mock",
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "suite": "quote",
+          "passed": 29,
+          "failed": 0
+        },
+        {
+          "suite": "attempt-store",
+          "passed": 32,
+          "failed": 0
+        },
+        {
+          "suite": "comparison",
+          "passed": 9,
+          "failed": 0
+        },
+        {
+          "suite": "status",
+          "passed": 30,
+          "failed": 0
+        },
+        {
+          "suite": "prodigi-product-details",
+          "passed": 15,
+          "failed": 0
+        },
+        {
+          "suite": "png-inspection",
+          "passed": 47,
+          "failed": 0
+        },
+        {
+          "suite": "Prodigi sandbox adapter suite",
+          "passed": 30,
+          "failed": 0
+        },
+        {
+          "suite": "Prodigi callback reconciliation suite",
+          "passed": 71,
+          "failed": 0
+        },
+        {
+          "suite": "order-authorization",
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "suite": "package",
+          "passed": 166,
+          "failed": 0
+        },
+        {
+          "suite": "capability-consumer",
+          "passed": 14,
+          "failed": 0
+        },
+        {
+          "suite": "quote-store",
+          "passed": 20,
+          "failed": 0
+        }
+      ],
+      "log": "/private/tmp/fc53-repair-full.log",
+      "log_sha256": "01ecd54c65de4aeec3ef3ed81c1f327ae4fef9911ed944a1e2b6020b2c34b2dc"
+    },
+    "targeted": {
+      "command": "npm run test:quote-store",
+      "exit": 0,
+      "passed": 20,
+      "failed": 0,
+      "log_sha256": "b72cdb9be78152b33ec353dc4d3467a4903e51aa81d109121be2db4162b390d1"
+    },
+    "quote_verifier": {
+      "command": "./scripts/verify-fulfillment --suite quote --mode simulated --evidence-dir evidence/FC-04",
+      "exit": 0,
+      "checks": 29,
+      "stdout_equals_evidence": true,
+      "stderr_bytes": 0,
+      "assertions": "Correct persistence fields; no stale not_implemented claim; canonical pending; sandbox/live/release false; zero external provider calls."
+    },
+    "release_gate": {
+      "command": "./scripts/verify-fulfillment --suite release --mode simulated --evidence-dir evidence/pr53-review-release-gate",
+      "exit": 1,
+      "expected": "fail closed",
+      "reason": "release_evidence_and_cross_repository_conformance_unavailable",
+      "receipt_sha256": "0d8dcd9bd12bd090f7755de6ffbfcac80da4c1f53ebee68806a1f43ce7c51a3c",
+      "external_provider_calls": 0
+    }
+  },
+  "tested_source_sha256": {
+    "src/quote-store.ts": "b7c16620e7f6434b1b87d79b7d4c9d7b5901e26ad4879377650ca59a54e63f40",
+    "tests/quote-store-suite.mjs": "3b775f8948a911546d28b935cc5828bf148a2d9f571704516474fb1f699386a4",
+    "scripts/verify-fulfillment": "50f1873389894f1add36d561dd168474aae2fe3a39d0b9b5149f34079ba327ea",
+    "docs/quotes.md": "036b3ada8392ac05f1680472692d0be36ea6e477a9aec367bd28211912fae383"
+  },
+  "limits": [
+    "No provider call, real credential read, merge or issue closure.",
+    "Optional local development persistence is not accepted canonical or production storage.",
+    "Owner/provider/release gates remain unchanged.",
+    "Hosted CI and exact-head independent re-review remain pending."
+  ]
+}

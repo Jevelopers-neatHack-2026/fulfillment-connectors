@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, chmodSync, rmSync, symlinkSync, statSync, realpathSync } from "node:fs";
+import { mkdtempSync, chmodSync, rmSync, symlinkSync, statSync, realpathSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -112,6 +112,28 @@ test("unsafe storage directories, symlinks and future schema versions fail close
   const store = createLocalQuoteStore(root); store.close();
   const db = new DatabaseSync(join(root, "quotes.sqlite")); db.exec("PRAGMA user_version=2"); db.close();
   assert.throws(() => createLocalQuoteStore(root), QuoteStoreError);
+});
+
+
+for (const [name, mutation] of [
+  ["extra table", "CREATE TABLE unrelated (secret TEXT)"],
+  ["extra view", "CREATE VIEW unrelated AS SELECT id FROM quotes"],
+  ["extra index", "CREATE INDEX unrelated ON quotes(payload)"],
+  ["trigger", "CREATE TRIGGER unrelated AFTER INSERT ON quotes BEGIN DELETE FROM quotes; END"],
+  ["missing table", "DROP TABLE quotes"],
+  ["extra column", "ALTER TABLE quotes ADD COLUMN unrelated TEXT"],
+  ["nullable payload", "DROP TABLE quotes; CREATE TABLE quotes (tenant TEXT NOT NULL, project TEXT NOT NULL, id TEXT NOT NULL, payload TEXT, PRIMARY KEY (tenant, project, id))"],
+  ["wrong type", "DROP TABLE quotes; CREATE TABLE quotes (tenant TEXT NOT NULL, project TEXT NOT NULL, id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY (tenant, project, id))"],
+  ["wrong key order", "DROP TABLE quotes; CREATE TABLE quotes (tenant TEXT NOT NULL, project TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (project, tenant, id))"],
+  ["generated column", "ALTER TABLE quotes ADD COLUMN unrelated TEXT GENERATED ALWAYS AS (id) VIRTUAL"],
+  ["version zero with view", "DROP TABLE quotes; CREATE VIEW unrelated AS SELECT 1; PRAGMA user_version=0"]
+]) test(`schema refusal preserves existing database: ${name}`, (t) => {
+  const root = directory(t), store = createLocalQuoteStore(root); store.close();
+  const filename = join(root, "quotes.sqlite");
+  const db = new DatabaseSync(filename); db.exec(mutation); db.close();
+  const before = readFileSync(filename);
+  assert.throws(() => createLocalQuoteStore(root), QuoteStoreError);
+  assert.deepEqual(readFileSync(filename), before, "rejection must not rewrite or repair the database");
 });
 
 test("quote store suite made zero network attempts", () => {

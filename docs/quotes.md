@@ -58,7 +58,10 @@ SQLite FULL synchronous transactions, and keys records by trusted tenant, projec
 and content-bound quote ID. Duplicate saves retain the original row. Reads and
 saves recheck the complete existing private quote hash/terms validator; corrupt or
 changed records fail without overwriting history. The read is bounded to 512 KiB.
-The schema is local version 1; unknown versions and unrelated tables are refused.
+The schema is local version 1. Every open validates the exact schema objects and
+column/type/nullability/key shape in a transaction, including already-versioned
+databases. Unknown versions, extra tables/views/indexes/triggers, and changed or
+missing columns are refused without rewriting the database.
 There is no destructive migration or automatic repair. Back up/restore the whole
 closed database and preserve its permissions; corrupted or future formats require
 host investigation, not resetting it in place.

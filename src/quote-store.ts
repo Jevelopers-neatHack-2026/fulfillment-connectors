@@ -7,6 +7,21 @@ import { validatePrivateQuoteSnapshot, type PrivateQuoteSnapshot, type QuoteSnap
 import type { TrustedScope } from "./types.js";
 
 const MAX_QUOTE_BYTES = 512 * 1024;
+const QUOTES_SCHEMA = "CREATE TABLE quotes (tenant TEXT NOT NULL, project TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (tenant, project, id))";
+
+function validateSchema(db: DatabaseSync): void {
+  const objects = db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name").all();
+  const expectedObjects = [
+    { type: "index", name: "sqlite_autoindex_quotes_1", tbl_name: "quotes", sql: null },
+    { type: "table", name: "quotes", tbl_name: "quotes", sql: QUOTES_SCHEMA }
+  ];
+  if (JSON.stringify(objects) !== JSON.stringify(expectedObjects)) throw new QuoteStoreError();
+  const columns = db.prepare("PRAGMA table_xinfo(quotes)").all();
+  const expectedColumns = ["tenant", "project", "id", "payload"].map((name, cid) => ({
+    cid, name, type: "TEXT", notnull: 1, dflt_value: null, pk: cid < 3 ? cid + 1 : 0, hidden: 0
+  }));
+  if (JSON.stringify(columns) !== JSON.stringify(expectedColumns)) throw new QuoteStoreError();
+}
 export class QuoteStoreError extends Error {
   readonly code = "quote_store_unavailable";
   constructor() { super("The private quote store could not safely complete the operation."); this.name = "QuoteStoreError"; }
@@ -55,13 +70,16 @@ export function createLocalQuoteStore(directory: string): LocalQuoteStore {
     const file = lstatSync(filename);
     if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 || (file.mode & 0o077) !== 0 || file.uid !== info.uid) throw new QuoteStoreError();
     db = new DatabaseSync(filename, { timeout: 1_000 });
-    db.exec("PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;");
+    // Hold the schema stable through initialization/validation; reject without repairing it.
+    db.exec("BEGIN IMMEDIATE");
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === 0) {
       // New databases only: never interpret an unrelated pre-existing schema as a migration.
-      if (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length !== 0) throw new QuoteStoreError();
-      db.exec("BEGIN IMMEDIATE; CREATE TABLE quotes (tenant TEXT NOT NULL, project TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (tenant, project, id)); PRAGMA user_version=1; COMMIT;");
+      if (db.prepare("SELECT name FROM sqlite_schema").all().length !== 0) throw new QuoteStoreError();
+      db.exec(`${QUOTES_SCHEMA}; PRAGMA user_version=1;`);
     } else if (version !== 1) throw new QuoteStoreError();
+    validateSchema(db);
+    db.exec("COMMIT; PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;");
     const database = db;
     const size = database.prepare("SELECT length(CAST(payload AS BLOB)) AS bytes FROM quotes WHERE tenant=? AND project=? AND id=?");
     const select = database.prepare("SELECT payload FROM quotes WHERE tenant=? AND project=? AND id=?");
@@ -100,6 +118,7 @@ export function createLocalQuoteStore(directory: string): LocalQuoteStore {
       close() { if (!closed) { database.close(); closed = true; } }
     });
   } catch {
+    try { db?.exec("ROLLBACK"); } catch { /* No transaction may have started. */ }
     try { db?.close(); } catch { /* Do not expose native SQLite diagnostics. */ }
     throw new QuoteStoreError();
   }
