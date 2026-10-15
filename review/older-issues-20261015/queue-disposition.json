@@ -1,0 +1,583 @@
+{
+  "repository": "Jevelopers-neatHack-2026/fulfillment-connectors",
+  "cutoff_inclusive": "2026-10-13T05:38:56Z",
+  "queue_source": ".orchestration/older-issues-20261015T053856Z/queues/fulfillment-connectors.json",
+  "starting_sha": "5f7e952f1632d0c07005bc64603ad1c28558814e",
+  "implementation_head": "5697c3974cad8c0d806e06a41c66f3975bb571a4",
+  "commits": [
+    "928d1ba2fe378d31a4f5977e6da4956f66167288",
+    "5697c3974cad8c0d806e06a41c66f3975bb571a4"
+  ],
+  "runtime": {
+    "node": "24.21.0",
+    "npm": "11.19.0",
+    "initial_node": "24.15.0",
+    "initial_npm": "11.12.1",
+    "model": "Codex GPT-6 per session instructions; exact backend ID, effort, speed and billable usage not exposed",
+    "graph": "entire command unavailable; focused source fallback used"
+  },
+  "mode": "simulated_local_fixtures_only",
+  "provider_calls": 0,
+  "completed_whole_issues": [],
+  "closure_candidates": [],
+  "issues": [
+    {
+      "issue": 1,
+      "createdAt": "2026-10-10T06:52:30Z",
+      "title": "[FC-EPIC][P0] Track WP08 fulfillment implementation and requirement coverage",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "review",
+        "master"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 3,
+      "createdAt": "2026-10-10T20:01:39Z",
+      "title": "[FC-01][P0] Establish the runtime and typed provider contract",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Single-capture canonical capability development consumer implemented, runtime acceptance remains partial.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "contracts",
+        "capability",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 4,
+      "createdAt": "2026-10-10T20:01:53Z",
+      "title": "[FC-02][P0] Pin the launch provider and environment support matrix",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [
+        46
+      ],
+      "remaining_routes": [
+        "host",
+        "print_spec",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 5,
+      "createdAt": "2026-10-10T20:01:56Z",
+      "title": "[FC-11][P0] Enforce shipping-data privacy and provider trust boundaries",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "privacy",
+        "host",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 6,
+      "createdAt": "2026-10-10T20:01:59Z",
+      "title": "[FC-10][P0] Record usage, provider attempts and cost signals durably",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [
+        47
+      ],
+      "remaining_routes": [
+        "finance_mapping",
+        "finance",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 7,
+      "createdAt": "2026-10-10T20:02:06Z",
+      "title": "[FC-02-MOCK][P0] Build a deterministic provider simulator and fault fixtures",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "contracts",
+        "capability",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 8,
+      "createdAt": "2026-10-10T20:02:09Z",
+      "title": "[FC-03][P0] Normalize versioned product catalogs and capabilities",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Both incompatible raw sources run through real connector discovery and pinned canonical adapter; geometry/authority stays unknown.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "capability",
+        "print_spec",
+        "host",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 9,
+      "createdAt": "2026-10-10T20:02:11Z",
+      "title": "[FC-04][P0] Implement quote requests and exact normalized quote terms",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Scoped immutable local quote persistence, optional execution hook, process reopen, tamper and currentness checks implemented.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "quote",
+        "finance",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 10,
+      "createdAt": "2026-10-10T20:02:16Z",
+      "title": "[FC-08][P0] Validate approved artifact packages against provider requirements",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "bundle",
+        "print_bundle",
+        "print_spec",
+        "host",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 11,
+      "createdAt": "2026-10-10T20:02:18Z",
+      "title": "[FC-06][P0] Persist submission identity and reconcile ambiguous provider outcomes",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [
+        50,
+        51
+      ],
+      "remaining_routes": [
+        "authorization",
+        "issuer",
+        "finance",
+        "host",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 12,
+      "createdAt": "2026-10-10T20:02:21Z",
+      "title": "[FC-05][P0] Bind external authorization to the exact submission command",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "authorization",
+        "issuer",
+        "bundle",
+        "finance",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 13,
+      "createdAt": "2026-10-10T20:02:29Z",
+      "title": "[FC-07][P0] Normalize shipment status with durable deduplication and polling",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "status",
+        "status_consumers",
+        "finance",
+        "host",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 14,
+      "createdAt": "2026-10-10T20:02:32Z",
+      "title": "[FC-09][P0] Expose comparable supplier-selection inputs without business policy",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "quote",
+        "capability",
+        "status_consumers",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 15,
+      "createdAt": "2026-10-10T20:02:34Z",
+      "title": "[FC-02-SANDBOX][P0] Integrate one Prodigi sandbox product through the safe provider boundary",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "R45-01 isolated follow-up fixes approval-before-candidate-loading; fixture tests only, no provider call.",
+      "existing_open_prs": [
+        45,
+        52
+      ],
+      "remaining_routes": [
+        "host",
+        "print_spec",
+        "print_bundle",
+        "issuer",
+        "finance",
+        "review"
+      ],
+      "closure_candidate": false
+    },
+    {
+      "issue": 16,
+      "createdAt": "2026-10-10T20:03:27Z",
+      "title": "[FC-12][P0] Gate the fulfillment v1 release on mock and sandbox evidence",
+      "state": "OPEN",
+      "disposition": "partial_external_dependencies_and_review",
+      "campaign_implementation": "Existing merged implementation inspected; no competing patch to existing reviewed/open work.",
+      "existing_open_prs": [],
+      "remaining_routes": [
+        "review",
+        "master"
+      ],
+      "closure_candidate": false
+    }
+  ],
+  "dependency_routes": {
+    "contracts": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "contract": "operation envelope, versions, capability/preflight boundaries",
+      "needed": "Accepted immutable schema/fixture pins and producer/consumer acknowledgement for every runtime boundary; development fixture bindings do not satisfy release acceptance."
+    },
+    "capability": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        32
+      ],
+      "contract": "FulfillmentCapabilitySnapshot/1.0.0 and PrintSpec/1.0.0",
+      "needed": "Review the new actual single-capture consumer against the retained 0.9.7 artifact; accountable canonical owner acceptance remains pending. Legacy bundle/quote/authorization translations stay refused."
+    },
+    "print_spec": {
+      "repository": "Jevelopers-neatHack-2026/print-production",
+      "issues": [
+        6
+      ],
+      "contract": "selected SKU printable geometry, format, surfaces and production constraints",
+      "needed": "Product/Print agreement and consumer receipt for exact provider snapshot. Physical stock dimensions are not trim or printable geometry; supplied 4x2 diagnostic corpus is not approved GLOBAL-PHO-4X6 output."
+    },
+    "host": {
+      "repository": "Jevelopers-neatHack-2026/getticketstub.com",
+      "issues": [
+        16
+      ],
+      "contract": "trusted host/product/account/destination/rights decisions",
+      "needed": "Current independently trusted scope/action grants, owner-approved SKU/destination/shipping/suitability, account terms/request-cost budget, secret reference and exact candidate binding. Sandbox smoke is separately owner-gated and was not run."
+    },
+    "privacy": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        8
+      ],
+      "contract": "privacy/evidence projection and host trust",
+      "needed": "Accepted privacy mapping plus application-host encryption/key custody, retention/deletion policy and pinned authenticated transport/replay store. Local helpers and the new development quote DB are not production encryption or host configuration."
+    },
+    "finance_mapping": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        11,
+        12
+      ],
+      "contract": "UsageEvent/source identity carrier and BudgetReservation",
+      "needed": "Accepted source/identity/version/trust mapping for the unchanged private producer facts proposed in existing fulfillment PR47. Do not invent provider execution IDs, source authority or charges."
+    },
+    "finance": {
+      "repository": "Jevelopers-neatHack-2026/cost-intelligence",
+      "issues": [
+        10,
+        12,
+        13,
+        15
+      ],
+      "contract": "fulfillment producer row, intake, reservation, uncertain settlement",
+      "needed": "Actual fulfillment-only gateway/reservation/recovery receipts over agreed source facts, immutable contract pins and trusted host/evidence context. Whole multi-producer issue closure is not required; local fixture results cannot substitute for this row."
+    },
+    "quote": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        25
+      ],
+      "contract": "FulfillmentQuote applicability and exact terms",
+      "needed": "Owner mapping for included/excluded/unknown tax, per-line known/unknown reasons, expiry provenance, lead-time/warnings/options and authoritative UUID/bundle/spec/destination refs. Preserve quantity and precision limits; do not truncate or mint missing authority."
+    },
+    "bundle": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        24,
+        37
+      ],
+      "contract": "ProductionBundle, approved preview, host access and owner byte helpers",
+      "needed": "Reviewed/adoptable replacement for SC-PFB-PARENT-LEGACY009; compatible fulfillment audience/approval, publication trust, PrintSpec/capability/preflight, access expiry, rights, quantity/surface mapping. No local bypass or silent package upgrade."
+    },
+    "print_bundle": {
+      "repository": "Jevelopers-neatHack-2026/print-production",
+      "issues": [
+        16
+      ],
+      "contract": "immutable eligible ProductionBundle",
+      "needed": "Genuinely approved domain-eligible output with trusted spec/row/preview/rights/Finance bindings. Existing preferred corpus source01a7b13813b27e5b925b1363543c2577e860ffff is consumed for integrity only and remains accepted:false/handoffEligible:false."
+    },
+    "authorization": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        26
+      ],
+      "contract": "OrderAuthorization claim/consume/replay",
+      "needed": "Accepted exact issuer/consumer protocol, lifetime, restart/revocation semantics and immutable schema/fixture pins; local fake issuer cannot establish authority."
+    },
+    "issuer": {
+      "repository": "Jevelopers-neatHack-2026/getticketstub.com",
+      "issues": [
+        16
+      ],
+      "contract": "GT-07.4/.5 authenticated issuer/claim/lookup/revalidation",
+      "needed": "Actual accepted issuer endpoint/implementation pin and reviewed concurrency/restart/changed-terms cases; prove two distinct intents share at most one single-use authorization and one provider dispatch. Do not wait for whole GT-07 closure."
+    },
+    "status": {
+      "repository": "Jevelopers-neatHack-2026/shared-contracts",
+      "issues": [
+        27
+      ],
+      "contract": "FulfillmentStatus and shipment/item observations",
+      "needed": "Accepted shipment/item quantities, cumulative-vs-delta, carrier/tracking, stable source/effect IDs and authenticated correction mapping. Current partial order-level draft does not preserve these facts."
+    },
+    "status_consumers": {
+      "repository": "Jevelopers-neatHack-2026/getticketstub.com",
+      "issues": [
+        16
+      ],
+      "contract": "commercial status consumer and Finance effect comparison",
+      "needed": "Pinned actual app/Finance consumer receipts showing duplicate callbacks/polls cause no second commercial transition/charge; fulfillment owns observations, not a substitute commercial ledger."
+    },
+    "review": {
+      "repository": "Jevelopers-neatHack-2026/fulfillment-connectors",
+      "issues": [
+        1,
+        16
+      ],
+      "contract": "exact-candidate independent review and supervisor merge/postmerge evidence",
+      "needed": "Orchestrator independent review of complete base/head diffs, required CI, authorized merge and actual postmerge evidence. This implementation agent neither merges nor closes issues."
+    },
+    "master": {
+      "repository": "Jevelopers-neatHack-2026/integration-evals",
+      "issues": [
+        14,
+        22
+      ],
+      "contract": "FUL-01 through FUL-04 master acceptance",
+      "needed": "Owner evaluates genuine integrated receipts after leaf delivery; mock tests/documentation do not establish product acceptance. These are downstream evidence owners, not whole-issue prerequisites."
+    }
+  },
+  "validation": {
+    "full_test": {
+      "command": "npm test",
+      "exit": 0,
+      "passing_checks": 686,
+      "suites": 18,
+      "log_sha256": "8c42d2d4aff131535e18c322ff0ab950c322d5168de6e7abb27d5d129ddff920",
+      "local_log_path": "/private/tmp/fc-final-tests.log"
+    },
+    "required_verifiers": [
+      {
+        "suite": "provider-matrix",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "385f104dfb6acaae89d512b0bf817bf2453558f174ecfb3a107d0642818f1295",
+        "status": "passed",
+        "checks": 20,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "security",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "a8e5bdb55a05c0aeccf1856567b683a3e48d7ab2b4905bcbc6e83fbfe1c386ba",
+        "status": "passed",
+        "checks": 46,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "metering",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "2d729d9ead470c9086b281bac6e8dc697bd83786444aa0ed8a1605993627a856",
+        "status": "passed",
+        "checks": 28,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "mock",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "c6b0b0368528386938c25391752b8eec5ceff87e909e147227faa85f82c37ac0",
+        "status": "passed",
+        "checks": 37,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "attempt-store",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "80a3f8b6c5d95eb3d7c4cfcca02414a52ba4851d5e83af22fa72a46a7dae915f",
+        "status": "passed",
+        "checks": 32,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "comparison",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "740c6247326efc2a98643f6f9f145eb3fbf915e96640df8593c0762f59ffc3f9",
+        "status": "passed",
+        "checks": 9,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "status",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "235dd92fbdb56606379319828ef06d18e70f3ba9bb2fc2eca24ff9c5858cbb31",
+        "status": "passed",
+        "checks": 30,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "prodigi-product-details",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "a7c7956fb553300576044e76069758ff0bc531ad4bd335a0ff9215df160e2004",
+        "status": "passed",
+        "checks": 15,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "png-inspection",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "c52d17aebdc6b18a9bf23da6da3dec4a52447d3d1bd8187ef19bfc0a32d21538",
+        "status": "passed",
+        "checks": 47,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "order-authorization",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "90117721001004494810e7a719323c4ef5baf8465358c8471a354de17a53c309",
+        "status": "passed",
+        "checks": 37,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "package",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "eace577282ba3b7803c05e3884560ebd3b130df8c32724b2ca455ff50930df7b",
+        "status": "passed",
+        "checks": 166,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "contract",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "51e6138d5df416a186379c9e539ed04686fbf19a9cd27284a9241bad8d1f4909",
+        "status": "passed",
+        "checks": 47,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "catalog",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "f3a09858ebe7df500d76af84460699089aea7089d38be5dc752f72e09a9aad9b",
+        "status": "passed",
+        "checks": 19,
+        "stdoutEqualsEvidence": true
+      },
+      {
+        "suite": "quote",
+        "exit": 0,
+        "stderrBytes": 0,
+        "stdoutSha256": "01bcb7ef6c8554b3081a6783b2def96aafbfcb6912b67e353768173c1a70d50b",
+        "status": "passed",
+        "checks": 29,
+        "stdoutEqualsEvidence": true
+      }
+    ],
+    "release_gate": {
+      "command": "./scripts/verify-fulfillment --suite release --mode simulated --evidence-dir evidence/older-issues-release-gate",
+      "exit": 1,
+      "expected": "fail closed",
+      "reason": "release_evidence_and_cross_repository_conformance_unavailable",
+      "provider_calls": 0
+    },
+    "execution_note": "Contract/catalog/quote wrappers executed on the working tree later committed as5697c39; the other eleven executed after5697c39. Final handoff changes evidence only."
+  },
+  "preserved_failures": [
+    "Initial exploratory full run on Node24.15.0 failed the exact Node pin and two old static assumptions about owner importers/subpath exports; final fresh pinned full run passed after explicit subpath isolation checks were updated.",
+    "Initial capability unit fixture used a stock width smaller than its existing safe-area bounds (13/14); corrected the fixture to test exact 0.001in depth while preserving valid width/height.",
+    "Initial quote-store tests had an invalid fs import and compared safe null-prototype records with ordinary object prototypes; imports and value-based assertions corrected; production integrity checks unchanged."
+  ],
+  "boundaries": [
+    "No issue closed, merge, deployment, provider call, real secret read or collateral publication.",
+    "No sibling repository edited. No newer P2 provider backlog implemented.",
+    "Existing PR46/47/50/51/52 and their author branches preserved.",
+    "R45-01 repair is a separate stacked candidate based on exact PR45 head; it is not merged into this main-based candidate."
+  ],
+  "pull_requests": [
+    {
+      "number": 53,
+      "base": "main",
+      "url": "https://github.com/Jevelopers-neatHack-2026/fulfillment-connectors/pull/53"
+    },
+    {
+      "number": 54,
+      "base": "orchestration/sandbox-product-read-20261012",
+      "head": "0fea37ca12decdcb93f012454e491baf97a8df51",
+      "url": "https://github.com/Jevelopers-neatHack-2026/fulfillment-connectors/pull/54",
+      "note": "Stacked R45-01 repair; original PR45 head unchanged at4dac32f. Independent review and current-main reconciliation remain required."
+    }
+  ]
+}
