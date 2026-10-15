@@ -1048,8 +1048,8 @@ function plainDataRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * The single strict check of a trusted host's answer, shared by the client and the command-line preflight so the two
- * cannot drift: the grant must be a plain data record with no extra keys, echo every field of the request exactly,
+ * The client strict check of a trusted host's answer, repeated after the CLI bootstrap has independently approved
+ * loading the candidate: the grant must be a plain data record with no extra keys, echo every request field exactly,
  * carry the four verified flags as `true`, and expire after `nowMs`.
  */
 export function isVerifiedSandboxProductReadGrant(request: SandboxProductReadGrantRequest, raw: unknown, nowMs: number): boolean {
