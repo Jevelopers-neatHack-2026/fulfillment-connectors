@@ -46,6 +46,11 @@
       "remaining_routes": [
         "contracts",
         "capability",
+        "quote",
+        "bundle",
+        "authorization",
+        "status",
+        "finance_mapping",
         "review"
       ],
       "closure_candidate": false
@@ -140,6 +145,7 @@
       "existing_open_prs": [],
       "remaining_routes": [
         "quote",
+        "quote_consumer",
         "finance",
         "review"
       ],
@@ -227,7 +233,7 @@
       "remaining_routes": [
         "quote",
         "capability",
-        "status_consumers",
+        "comparison_consumer",
         "review"
       ],
       "closure_candidate": false
@@ -407,6 +413,22 @@
       ],
       "contract": "FUL-01 through FUL-04 master acceptance",
       "needed": "Owner evaluates genuine integrated receipts after leaf delivery; mock tests/documentation do not establish product acceptance. These are downstream evidence owners, not whole-issue prerequisites."
+    },
+    "quote_consumer": {
+      "repository": "Jevelopers-neatHack-2026/getticketstub.com",
+      "issues": [
+        16
+      ],
+      "contract": "FulfillmentQuote consumer binding and persistence handoff",
+      "needed": "Application consumer review and exact producer/consumer pins for preserved quote applicability, expiry, exact money and authoritative references; fixture-only receipts are not canonical acceptance."
+    },
+    "comparison_consumer": {
+      "repository": "Jevelopers-neatHack-2026/getticketstub.com",
+      "issues": [
+        16
+      ],
+      "contract": "comparable supplier-selection inputs",
+      "needed": "Application review of the actual comparison projection, exact source quote/capability references, non-comparability flags and use-time currentness recheck. Ranking and commercial selection remain application-owned."
     }
   },
   "validation": {
