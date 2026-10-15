@@ -234,8 +234,10 @@ const INPUT_KEYS = new Set([
 ]);
 
 function readPlainDataRecord(value: unknown): Record<string, unknown> | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (value === null || typeof value !== "object") return undefined;
   try {
+    // Array.isArray also throws for a revoked Proxy; keep it in the safe boundary.
+    if (Array.isArray(value)) return undefined;
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return undefined;
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -294,8 +296,10 @@ function validSandboxEndpoint(value: unknown): ProviderPolicyReason | undefined 
 
 function validVerifiedDecision(value: unknown): Record<string, unknown> | undefined {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (typeof value !== "object") return undefined;
   try {
+    // A fulfilled verifier promise can still contain a subsequently revoked Proxy.
+    if (Array.isArray(value)) return undefined;
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return undefined;
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;

@@ -334,6 +334,142 @@ cases.push(["only the named sandbox adapter reaches sandbox_call_permitted after
   assert.equal(prodigi.operations.submit.implementation, "not_implemented");
 }]);
 
+// FC02-R1: opaque in-process inputs are not necessarily JSON records. Revoke
+// both object and array targets to exercise Array.isArray's throwing path.
+for (const kind of ["object", "array"]) {
+  cases.push([`revoked ${kind} configuration is a safe failure before verification`, async () => {
+    const fixture = successfulVerifier();
+    const target = kind === "object" ? sandboxInput() : [];
+    const { proxy, revoke } = Proxy.revocable(target, {});
+    revoke();
+    const result = await evaluateProviderPolicy(proxy, fixture.verifier);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.reasons, ["invalid_configuration"]);
+    assert.equal(result.sandboxPreconditionsSatisfied, false);
+    assert.equal(result.sandboxRoute, null);
+    assert.equal(fixture.calls, 0);
+    assertNoEffects(result);
+  }]);
+
+  cases.push([`revoked fulfilled ${kind} decision is a safe unverified result`, async () => {
+    let calls = 0;
+    const result = await evaluateProviderPolicy(sandboxInput({ adapterId: PRODIGI_SANDBOX_ADAPTER_ID }), {
+      verify(request) {
+        calls += 1;
+        const target = kind === "object" ? {
+          ...request,
+          productAndDestinationApproved: true,
+          sandboxAccountAccessConfirmed: true
+        } : [];
+        const { proxy, revoke } = Proxy.revocable(target, {});
+        // Fulfill first, then revoke before the await continuation. Returning a
+        // revoked proxy directly would only test the existing promise catch.
+        const fulfilled = Promise.resolve(proxy);
+        revoke();
+        return fulfilled;
+      }
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.reasons, ["decision_unverified"]);
+    assert.equal(result.sandboxPreconditionsSatisfied, false);
+    assert.equal(result.sandboxRoute, null);
+    assertNoEffects(result);
+  }]);
+}
+
+cases.push(["throwing configuration inspection traps remain sanitized without verification", async () => {
+  const sentinel = "fixture-only-inspection-error";
+  const fixture = successfulVerifier();
+  for (const trap of ["getPrototypeOf", "ownKeys", "getOwnPropertyDescriptor"]) {
+    let reads = 0;
+    const input = new Proxy(sandboxInput(), {
+      [trap]() { reads += 1; throw new Error(sentinel); }
+    });
+    const result = await evaluateProviderPolicy(input, fixture.verifier);
+    assert.equal(reads, 1);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.reasons, ["invalid_configuration"]);
+    assert.equal(JSON.stringify(result).includes(sentinel), false);
+    assertNoEffects(result);
+  }
+  assert.equal(fixture.calls, 0);
+}]);
+
+cases.push(["throwing verifier-result inspection traps remain sanitized", async () => {
+  const sentinel = "fixture-only-decision-inspection-error";
+  for (const trap of ["getPrototypeOf", "ownKeys", "getOwnPropertyDescriptor"]) {
+    let reads = 0;
+    let calls = 0;
+    const result = await evaluateProviderPolicy(sandboxInput(), {
+      async verify(request) {
+        calls += 1;
+        return new Proxy({ ...request, productAndDestinationApproved: true, sandboxAccountAccessConfirmed: true }, {
+          [trap]() { reads += 1; throw new Error(sentinel); }
+        });
+      }
+    });
+    assert.equal(calls, 1);
+    assert.equal(reads, 1);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.reasons, ["decision_unverified"]);
+    assert.equal(JSON.stringify(result).includes(sentinel), false);
+    assertNoEffects(result);
+  }
+}]);
+
+cases.push(["decision accessors are rejected without evaluating them", async () => {
+  let reads = 0;
+  const result = await evaluateProviderPolicy(sandboxInput(), {
+    async verify(request) {
+      return Object.defineProperty({ ...request, sandboxAccountAccessConfirmed: true }, "productAndDestinationApproved", {
+        enumerable: true,
+        get() { reads += 1; return true; }
+      });
+    }
+  });
+  assert.equal(reads, 0);
+  assert.equal(result.status, "blocked");
+  assert.deepEqual(result.reasons, ["decision_unverified"]);
+  assertNoEffects(result);
+}]);
+
+cases.push(["non-record configurations and decisions retain their safe failure classifications", async () => {
+  const fixture = successfulVerifier();
+  for (const value of [null, 0, "sandbox", [], new Date(0), () => undefined]) {
+    const inputResult = await evaluateProviderPolicy(value, fixture.verifier);
+    assert.equal(inputResult.status, "blocked");
+    assert.deepEqual(inputResult.reasons, ["invalid_configuration"]);
+    assertNoEffects(inputResult);
+    const decisionResult = await evaluateProviderPolicy(sandboxInput(), { async verify() { return value; } });
+    assert.equal(decisionResult.status, "blocked");
+    assert.deepEqual(decisionResult.reasons, ["decision_unverified"]);
+    assertNoEffects(decisionResult);
+  }
+  assert.equal(fixture.calls, 0);
+}]);
+
+cases.push(["null-prototype data records still support verified offline prerequisites", async () => {
+  const input = Object.assign(Object.create(null), sandboxInput());
+  let calls = 0;
+  const result = await evaluateProviderPolicy(input, {
+    async verify(request) {
+      calls += 1;
+      return Object.assign(Object.create(null), request, {
+        productAndDestinationApproved: true,
+        sandboxAccountAccessConfirmed: true
+      });
+    }
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, "sandbox_prerequisites_verified");
+  assert.equal(result.sandboxPreconditionsSatisfied, true);
+  assert.deepEqual(result.reasons, ["provider_adapter_not_implemented"]);
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.reasons), true);
+  assertNoEffects(result);
+}]);
+
 export async function runProviderMatrixSuite() {
   const results = [];
   const originalFetch = globalThis.fetch;
