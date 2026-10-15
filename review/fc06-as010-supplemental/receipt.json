@@ -1,0 +1,109 @@
+{
+  "format": "fc06-as010-supplemental-publication/1",
+  "scope": "pinned pure helper replay only; not whole-PR review or release acceptance",
+  "repository": "Jevelopers-neatHack-2026/fulfillment-connectors",
+  "base": "06c7a242d837dae72bf547ea4e029ce672b7ad79",
+  "target": {
+    "pr": 50,
+    "head": "c1717e09f2d933782ef3a4b41205899fb9dceae1",
+    "path": "tests/fixture-claim-retry.mjs",
+    "bytes": 10988,
+    "gitBlob": "edafa5aa053d2c183eef13f68d1fd2408fd2f83c",
+    "sha256": "43cf7ec11ce9e8ae74ee133a94a3887756b9b2f3e3d6e185a6bc95d4d6fbfe10"
+  },
+  "files": [
+    {
+      "path": "run.mjs",
+      "bytes": 1160,
+      "sha256": "66d0893a90228f73368c86ecf2354c061b7fd99d5d7a6f140e2b9a154a2b4e57"
+    },
+    {
+      "path": "cases.mjs",
+      "bytes": 8550,
+      "sha256": "d37d8926a5ed18938359459f8f1742ab0ad6809eabe9d59df7b94f1f2540e953"
+    }
+  ],
+  "historicalEvidence": {
+    "archive": "PR50-supplemental-evidence.zip",
+    "archiveSha256": "259bcef9331f77c8e857672c5a933e0caca529faf0f795434382c0c501581b65",
+    "access": "conversation handoff, not a public repository artifact",
+    "manifestFilesReverified": 61,
+    "baseline": {
+      "passed": 9,
+      "failed": 34,
+      "exit": 1
+    },
+    "pr50Unadapted": {
+      "passed": 32,
+      "failed": 11,
+      "exit": 1,
+      "cause": "supplemental expectations used fixture_invalid_clock instead of declared fixture_clock_invalid"
+    },
+    "pr50Adapted": {
+      "passed": 43,
+      "failed": 0,
+      "exit": 0
+    },
+    "adaptation": "two repeated test error-code literal occurrences only; helper unchanged",
+    "inheritedCutoff": {
+      "passed": 1,
+      "failed": 0,
+      "exit": 0
+    },
+    "osDenied": {
+      "passed": 44,
+      "failed": 0,
+      "exit": 0,
+      "composition": "same 43 controls plus actual EPERM socket control; separate positive loopback passed"
+    },
+    "notAuthorBaseline": "PR50 author baseline 12/31 and these supplemental 9/34 counts are different suites; do not combine them",
+    "publicationChange": "Only the cases-file header comment was clarified; executable test bodies are the retained PR50-adapted controls."
+  },
+  "publicationValidation": {
+    "runtime": "Node 22.16.0; not repository-pinned Node 24.21.0/npm 11.19.0",
+    "environment": "only existing PATH passed to Node children",
+    "initialLaunch": {
+      "result": "failed before Node started",
+      "reason": "constructed PATH omitted installed nvm directory",
+      "testsExecuted": false
+    },
+    "replay": {
+      "command": "env -i PATH=\"$PATH\" node review/fc06-as010-supplemental/run.mjs <pinned-source-file>",
+      "passed": 43,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "exit": 0,
+      "stdoutSha256": "6e557af5c213bb5b04911cfc888d47350337b2465029cfe04f8875525d85d1bb",
+      "stderrBytes": 0
+    },
+    "tamper": {
+      "input": "pinned source prefixed with synthetic file-marker side effect",
+      "exit": 1,
+      "executionMarkerCreated": false,
+      "result": "source digest mismatch refused before candidate import"
+    },
+    "syntax": [
+      {
+        "command": "node --check review/fc06-as010-supplemental/run.mjs",
+        "exit": 0
+      },
+      {
+        "command": "node --check review/fc06-as010-supplemental/cases.mjs",
+        "exit": 0
+      }
+    ]
+  },
+  "gates": {
+    "nativeFullSuiteExecutedHere": false,
+    "pinnedProfileExecutedHere": false,
+    "wholePrIndependentReview": false,
+    "maintainerApproval": false,
+    "providerExecution": false,
+    "financeOrIssuerExecution": false,
+    "issue11Complete": false,
+    "gate16Complete": false,
+    "epic1Complete": false
+  }
+}
