@@ -19,6 +19,7 @@ export type QuoteErrorCode =
   | "provider_response_invalid"
   | "contract_missing"
   | "contract_rejected"
+  | "persistence_unavailable"
   | "scope_mismatch"
   | "unsupported_schema_major";
 
@@ -33,6 +34,7 @@ const SAFE_MESSAGES: Readonly<Record<QuoteErrorCode, string>> = {
   provider_response_invalid: "The quotation response did not pass validation.",
   contract_missing: "A quote contract binding is required.",
   contract_rejected: "The injected quote contract boundary rejected the result.",
+  persistence_unavailable: "The quote snapshot could not be persisted safely.",
   scope_mismatch: "The quote contract receipt did not match the trusted scope.",
   unsupported_schema_major: "The quote contract schema major version is unsupported."
 };
@@ -142,6 +144,12 @@ export interface QuoteDependencies {
   readonly clock: QuoteClock;
   readonly trustedScope: TrustedScope;
   readonly policy?: Partial<QuoteExecutionPolicy>;
+  readonly quoteStore?: QuoteSnapshotPersistence;
+}
+
+/** Local private snapshot storage, not a shared schema or purchase authority. */
+export interface QuoteSnapshotPersistence {
+  save(quote: PrivateQuoteSnapshot, trustedScope: TrustedScope): Promise<void>;
 }
 
 export type ExactMoney = {
@@ -961,6 +969,14 @@ export async function executePrivateQuote(input: unknown, dependencies: QuoteDep
     const contracts = dependencyValue<ContractValidator>(dependencies, "contracts");
     const validatorBinding = contractBinding(contracts, snapshotScope(dependencyValue(dependencies, "trustedScope")));
     const scope = snapshotScope(dependencyValue(dependencies, "trustedScope"));
+    const quoteStore = optionalDependencyValue<QuoteSnapshotPersistence>(dependencies, "quoteStore");
+    let saveQuote: QuoteSnapshotPersistence["save"] | undefined;
+    if (quoteStore !== undefined) {
+      try {
+        saveQuote = dependencyValue<QuoteSnapshotPersistence["save"]>(quoteStore, "save");
+        if (typeof saveQuote !== "function") throw new Error();
+      } catch { return invalid("persistence_unavailable"); }
+    }
     const prepared = await prepareBoundInput(input, scope, nowBeforeCall.text);
     const port = dependencyValue<BoundedQuotePort>(dependencies, "quotePort");
     const method = quoteMethod(port);
@@ -1068,6 +1084,10 @@ export async function executePrivateQuote(input: unknown, dependencies: QuoteDep
       const code = internalQuoteErrorCode(error);
       return invalid(code === "scope_mismatch" || code === "unsupported_schema_major" ? code : "contract_rejected");
     }
+    if (quoteStore !== undefined && saveQuote !== undefined) {
+      try { await Reflect.apply(saveQuote, quoteStore, [quote, scope]); }
+      catch { return invalid("persistence_unavailable"); }
+    }
     return deepFreeze({
       quote,
       sharedPayload,
@@ -1132,7 +1152,7 @@ function snapshotLeadTimeForProvider(value: unknown): unknown {
   return { state: "known", minimumDays: leadTime.minimumDays, maximumDays: leadTime.maximumDays };
 }
 
-async function validatePrivateQuoteSnapshot(value: unknown): Promise<PrivateQuoteSnapshot> {
+export async function validatePrivateQuoteSnapshot(value: unknown): Promise<PrivateQuoteSnapshot> {
   const quote = record(safeTree(value));
   exactKeys(quote, PRIVATE_QUOTE_KEYS);
   if (quote.localFormat !== PRIVATE_QUOTE_FORMAT || quote.financialEffect !== "quote_only" ||

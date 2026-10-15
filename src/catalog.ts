@@ -717,10 +717,25 @@ export async function normalizeCatalogSnapshot(input: unknown): Promise<CatalogS
 
 /** Calls exactly one injected read-only source operation, then normalizes its copy. */
 export async function discoverCatalogSnapshot(source: CatalogSource): Promise<CatalogSnapshot> {
+  return (await captureCatalogSnapshot(source)).snapshot;
+}
+
+/** Private development capture: both projections must use this single owned input, never reread the source. */
+export async function captureCatalogSnapshot(source: CatalogSource): Promise<{
+  readonly input: ProviderCatalogInput;
+  readonly snapshot: CatalogSnapshot;
+}> {
   if (source === null || typeof source !== "object" || typeof source.readCatalogSnapshot !== "function") {
     throw new TypeError("A read-only catalog source is required.");
   }
-  return normalizeCatalogSnapshot(await source.readCatalogSnapshot());
+  let input: unknown;
+  try {
+    input = frozenOwnedCopy(await source.readCatalogSnapshot());
+  } catch {
+    throw new TypeError("Catalog source could not supply a supported private development capture.");
+  }
+  const snapshot = await normalizeCatalogSnapshot(input);
+  return Object.freeze({ input: input as ProviderCatalogInput, snapshot });
 }
 
 type NormalizedCatalogSelection = Omit<CatalogSelectionInput, "dimensions" | "bleed" | "safeArea"> & {
