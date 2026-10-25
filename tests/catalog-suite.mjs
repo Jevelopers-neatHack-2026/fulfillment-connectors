@@ -286,6 +286,75 @@ add("injected reads occur once and snapshots own immutable copies", async () => 
   assert.ok(Object.isFrozen(snapshot.products[0].constraints.dimensions.value));
 });
 
+add("catalog source method lookup failures publish only a sanitized error", async () => {
+  const marker = new Error("synthetic-private-source-marker");
+  let getterReads = 0;
+  const accessor = Object.defineProperty({}, "readCatalogSnapshot", {
+    get() { getterReads += 1; throw marker; }
+  });
+  const throwingProxy = new Proxy({}, { get() { throw marker; } });
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (const source of [accessor, throwingProxy, revoked.proxy]) {
+    await assert.rejects(discoverCatalogSnapshot(source), (error) => {
+      assert.notEqual(error, marker);
+      assert.ok(error instanceof TypeError);
+      assert.equal(error.message, "Catalog source could not supply a supported private development capture.");
+      assert.equal("cause" in error, false);
+      return true;
+    });
+  }
+  assert.equal(getterReads, 1);
+});
+
+add("catalog source captures one callable with its original receiver", async () => {
+  let getterReads = 0;
+  let calls = 0;
+  const raw = copyCatalog();
+  const source = {
+    raw,
+    get readCatalogSnapshot() {
+      getterReads += 1;
+      if (getterReads > 1) throw new Error("source method read twice");
+      const read = async function () {
+        calls += 1;
+        assert.equal(this, source);
+        return this.raw;
+      };
+      Object.defineProperty(read, "call", { get() { throw new Error("call property must not be read"); } });
+      return read;
+    }
+  };
+  const snapshot = await discoverCatalogSnapshot(source);
+  assert.equal(getterReads, 1);
+  assert.equal(calls, 1);
+  assert.equal(snapshot.snapshotIdentity, (await normalizeCatalogSnapshot(raw)).snapshotIdentity);
+});
+
+add("catalog source retains prototype methods and sanitizes invocation failures", async () => {
+  class Source {
+    constructor() { this.raw = copyCatalog(); this.calls = 0; }
+    async readCatalogSnapshot() { this.calls += 1; return this.raw; }
+  }
+  const source = new Source();
+  assert.equal((await discoverCatalogSnapshot(source)).snapshotIdentity, (await normalizeCatalogSnapshot(source.raw)).snapshotIdentity);
+  assert.equal(source.calls, 1);
+  for (const failing of [
+    { readCatalogSnapshot() { throw new Error("synthetic-private-source-marker"); } },
+    { async readCatalogSnapshot() { throw new Error("synthetic-private-source-marker"); } },
+    { readCatalogSnapshot: new Proxy(() => {}, { apply() { throw new Error("synthetic-private-source-marker"); } }) }
+  ]) {
+    await assert.rejects(discoverCatalogSnapshot(failing), {
+      name: "TypeError", message: "Catalog source could not supply a supported private development capture."
+    });
+  }
+  for (const invalid of [null, undefined, 1, "source", {}, { readCatalogSnapshot: null }]) {
+    await assert.rejects(discoverCatalogSnapshot(invalid), {
+      name: "TypeError", message: "A read-only catalog source is required."
+    });
+  }
+});
+
 add("canonical boundary delegation uses the existing validator and preserves pending fixture status", async () => {
   const snapshot = await normalizeCatalogSnapshot(catalogA);
   let captured;
