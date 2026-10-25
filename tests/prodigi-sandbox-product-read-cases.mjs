@@ -1109,6 +1109,17 @@ export function registerProductReadCases(add) {
         ["account access proven", (r) => { r.attestations.accountAccess = "PROVEN"; }],
         ["decision called verified", (r) => { r.attestations.decisionVerifier = "verified"; }],
         ["two requests dispatched", (r) => { r.request.dispatched = 2; }],
+        ["success without a dispatch", (r) => { r.request.attempts = 0; r.request.dispatched = 0; }],
+        ["dispatch missing from attempt count", (r) => { r.request.attempts = 0; }],
+        ["refusal missing from attempt count", (r) => { r.request.refused = 1; }],
+        ["success without an HTTP status", (r) => { r.outcome.httpStatus = null; }],
+        ["success with an HTTP failure", (r) => { r.outcome.httpStatus = 503; }],
+        ["success classified not dispatched", (r) => { r.outcome.sideEffectState = "not_dispatched"; }],
+        ["success without response bytes", (r) => { r.outcome.responseBytes = null; }],
+        ["success with an empty response", (r) => { r.outcome.responseBytes = 0; }],
+        ["success with an oversized response", (r) => { r.outcome.responseBytes = 1_048_577; }],
+        ["unverified final receipt", (r) => { r.trustedHostGrant.verified = false; }],
+        ["missing final grant expiry", (r) => { r.trustedHostGrant.expiresAt = null; }],
         ["retries recorded", (r) => { r.request.retries = 1; }],
         ["other path", (r) => { r.request.path = "/v4.0/products/OTHER"; }],
         ["other origin", (r) => { r.request.origin = "https://api.prodigi.com"; }],
@@ -1140,6 +1151,22 @@ export function registerProductReadCases(add) {
       failed.outcome = { status: "failed", httpStatus: null, errorCode: "timeout", sideEffectState: "possible", elapsedMs: 1, responseBytes: null };
       failed.decoded = null;
       assert.deepEqual(validateProductReadReceipt(failed), []);
+      // HTTP failures and invalid/oversized bodies still report a real dispatch;
+      // a pre-dispatch credential failure has neither status nor response bytes.
+      const noDispatch = copy();
+      noDispatch.request = { ...noDispatch.request, attempts: 0, dispatched: 0, refused: 0 };
+      noDispatch.outcome = { status: "failed", httpStatus: null, errorCode: "credential_unavailable", sideEffectState: "not_dispatched", elapsedMs: 1, responseBytes: null };
+      noDispatch.decoded = null;
+      assert.deepEqual(validateProductReadReceipt(noDispatch), []);
+      for (const [key, value] of [["httpStatus", 200], ["responseBytes", 1]]) {
+        const fabricatedResponse = structuredClone(noDispatch);
+        fabricatedResponse.outcome[key] = value;
+        assert.notDeepEqual(validateProductReadReceipt(fabricatedResponse), [], `no dispatch cannot report ${key}`);
+      }
+      // Any 2xx accepted by the client remains a successful transport response.
+      const otherSuccess = copy();
+      otherSuccess.outcome.httpStatus = 201;
+      assert.deepEqual(validateProductReadReceipt(otherSuccess), []);
       assert.notDeepEqual(validateProductReadReceipt(null), []);
       assert.notDeepEqual(validateProductReadReceipt([]), []);
     });
