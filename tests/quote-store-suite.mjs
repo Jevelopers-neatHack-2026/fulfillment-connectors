@@ -85,6 +85,79 @@ test("changed terms, malformed data and tampered rows cannot overwrite history",
   db.close();
 });
 
+test("persisted quote reads admit the byte limit and distinguish oversize from absence", async (t) => {
+  const root = directory(t), store = storeAt(t, root), value = await quote();
+  assert.equal(await store.get(value.quoteId, quoteScope), undefined);
+  await store.save(value, quoteScope);
+  const db = new DatabaseSync(join(root, "quotes.sqlite"));
+  t.after(() => db.close());
+  const payload = JSON.stringify(value);
+  const atLimit = payload + " ".repeat(512 * 1024 - Buffer.byteLength(payload));
+  db.prepare("UPDATE quotes SET payload=?").run(atLimit);
+  assert.equal(JSON.stringify(await store.get(value.quoteId, quoteScope)), payload);
+  for (const oversized of [atLimit + " ", payload + "\u00e9".repeat(256 * 1024)]) {
+    db.prepare("UPDATE quotes SET payload=?").run(oversized);
+    await assert.rejects(store.get(value.quoteId, quoteScope), QuoteStoreError);
+    assert.equal(db.prepare("SELECT payload FROM quotes").get().payload, oversized, "rejected rows are never rewritten");
+  }
+  db.prepare("UPDATE quotes SET payload=?").run(Buffer.from(payload));
+  assert.equal(db.prepare("SELECT typeof(payload) AS type FROM quotes").get().type, "blob");
+  await assert.rejects(store.get(value.quoteId, quoteScope), QuoteStoreError);
+  db.prepare("UPDATE quotes SET payload=?").run(payload);
+  assert.equal(JSON.stringify(await store.get(value.quoteId, quoteScope)), payload);
+});
+
+test("a concurrent quote replacement cannot materialize an oversized payload", async (t) => {
+  const root = directory(t), initial = storeAt(t, root), value = await quote();
+  await initial.save(value, quoteScope);
+  initial.close();
+  const writer = new DatabaseSync(join(root, "quotes.sqlite"));
+  const originalPayload = JSON.stringify(value);
+  const oversized = originalPayload + " ".repeat(1024 * 1024);
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  let replacementApplied = false;
+  let largestMaterializedPayload = 0;
+  // Replace the row after the first scoped read on a real SQLite connection.
+  // A single-statement reader may return that earlier valid snapshot. A split
+  // size/payload reader must not transfer the later oversized row to JavaScript.
+  // The wrapper schedules the writer and observes results; it fabricates none.
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = Reflect.apply(originalPrepare, this, [sql]);
+    if (!/^SELECT /u.test(sql)) return statement;
+    return new Proxy(statement, {
+      get(target, key) {
+        if (key === "get") return (...args) => {
+          const row = Reflect.apply(target.get, target, args);
+          if (typeof row?.payload === "string") largestMaterializedPayload = Math.max(largestMaterializedPayload, Buffer.byteLength(row.payload));
+          if (args.at(-3) === quoteScope.tenantId && args.at(-2) === quoteScope.projectId && args.at(-1) === value.quoteId && !replacementApplied) {
+            writer.prepare("UPDATE quotes SET payload=?").run(oversized);
+            replacementApplied = true;
+          }
+          return row;
+        };
+        const member = Reflect.get(target, key, target);
+        return typeof member === "function" ? member.bind(target) : member;
+      }
+    });
+  };
+  let reader;
+  try {
+    reader = createLocalQuoteStore(root);
+    const read = await reader.get(value.quoteId, quoteScope).catch((error) => {
+      assert.ok(error instanceof QuoteStoreError);
+      return undefined;
+    });
+    if (read !== undefined) assert.equal(JSON.stringify(read), originalPayload, "an atomic read may return the original snapshot");
+    assert.equal(replacementApplied, true, "the separate connection must actually replace the row");
+    await assert.rejects(reader.get(value.quoteId, quoteScope), QuoteStoreError, "the next read must reject the oversized replacement");
+    assert.ok(largestMaterializedPayload <= 512 * 1024, `materialized ${largestMaterializedPayload} bytes before rejection`);
+  } finally {
+    DatabaseSync.prototype.prepare = originalPrepare;
+    reader?.close();
+    writer.close();
+  }
+});
+
 test("closed/outage persistence never returns a successful quote or creates an order", async (t) => {
   const store = storeAt(t, directory(t)); store.close();
   for (const quoteStore of [store, { async save() { throw new Error("private-canary"); } }, { save: "not-a-method" }]) {
