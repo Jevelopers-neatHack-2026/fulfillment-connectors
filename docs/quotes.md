@@ -57,7 +57,12 @@ store retain in-memory behavior. Hosts that require durable quotes must supply i
 SQLite FULL synchronous transactions, and keys records by trusted tenant, project
 and content-bound quote ID. Duplicate saves retain the original row. Reads and
 saves recheck the complete existing private quote hash/terms validator; corrupt or
-changed records fail without overwriting history. The read is bounded to 512 KiB.
+changed records fail without overwriting history. One SQLite statement checks
+the stored byte length and returns the payload only when it is at most 512 KiB,
+so a concurrent replacement cannot send a larger payload into JavaScript between
+a size check and lookup. Oversized rows raise the safe store error; absent rows
+still return `undefined`. This bounds the payload transferred to JavaScript, not
+SQLite's internal memory or the size of the database on disk.
 The schema is local version 1. Every open validates the exact schema objects and
 column/type/nullability/key shape in a transaction, including already-versioned
 databases. Unknown versions, extra tables/views/indexes/triggers, and changed or

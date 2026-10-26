@@ -81,18 +81,17 @@ export function createLocalQuoteStore(directory: string): LocalQuoteStore {
     validateSchema(db);
     db.exec("COMMIT; PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;");
     const database = db;
-    const size = database.prepare("SELECT length(CAST(payload AS BLOB)) AS bytes FROM quotes WHERE tenant=? AND project=? AND id=?");
-    const select = database.prepare("SELECT payload FROM quotes WHERE tenant=? AND project=? AND id=?");
+    // Check the byte length in the same read that projects the payload. A
+    // separate size query lets another connection replace a checked row before
+    // the payload crosses into JavaScript. NULL preserves oversize-vs-absent.
+    const select = database.prepare("SELECT CASE WHEN length(CAST(payload AS BLOB)) <= ? THEN payload ELSE NULL END AS payload FROM quotes WHERE tenant=? AND project=? AND id=?");
     const insert = database.prepare("INSERT INTO quotes (tenant,project,id,payload) VALUES (?,?,?,?) ON CONFLICT (tenant,project,id) DO NOTHING");
     let closed = false;
     const get = async (quoteId: string, trustedScope: TrustedScope): Promise<PrivateQuoteSnapshot | undefined> => {
       try {
         if (closed) throw new QuoteStoreError();
         const scope = scopeCopy(trustedScope); validId(quoteId);
-        const storedSize = size.get(scope.tenantId, scope.projectId, quoteId);
-        if (!storedSize) return undefined;
-        if (typeof storedSize.bytes !== "number" || storedSize.bytes > MAX_QUOTE_BYTES) throw new QuoteStoreError();
-        const row = select.get(scope.tenantId, scope.projectId, quoteId);
+        const row = select.get(MAX_QUOTE_BYTES, scope.tenantId, scope.projectId, quoteId);
         if (!row) return undefined;
         if (typeof row.payload !== "string" || Buffer.byteLength(row.payload) > MAX_QUOTE_BYTES) throw new QuoteStoreError();
         const quote = await validatePrivateQuoteSnapshot(JSON.parse(row.payload));
