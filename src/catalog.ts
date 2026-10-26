@@ -725,12 +725,21 @@ export async function captureCatalogSnapshot(source: CatalogSource): Promise<{
   readonly input: ProviderCatalogInput;
   readonly snapshot: CatalogSnapshot;
 }> {
-  if (source === null || typeof source !== "object" || typeof source.readCatalogSnapshot !== "function") {
+  if (source === null || typeof source !== "object") {
+    throw new TypeError("A read-only catalog source is required.");
+  }
+  let readCatalogSnapshot: CatalogSource["readCatalogSnapshot"];
+  try {
+    readCatalogSnapshot = source.readCatalogSnapshot;
+  } catch {
+    throw new TypeError("Catalog source could not supply a supported private development capture.");
+  }
+  if (typeof readCatalogSnapshot !== "function") {
     throw new TypeError("A read-only catalog source is required.");
   }
   let input: unknown;
   try {
-    input = frozenOwnedCopy(await source.readCatalogSnapshot());
+    input = frozenOwnedCopy(await Reflect.apply(readCatalogSnapshot, source, []));
   } catch {
     throw new TypeError("Catalog source could not supply a supported private development capture.");
   }
