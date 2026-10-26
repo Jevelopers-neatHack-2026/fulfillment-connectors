@@ -136,6 +136,7 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
       request.method !== "GET" || request.origin !== "https://api.sandbox.prodigi.com" || request.path !== "/v4.0/products/GLOBAL-PHO-4X6" ||
       request.retries !== 0 || request.redirect !== "error" || request.timeoutMs !== TIMEOUT_MS || request.maxProviderRequests !== 1 ||
       ![request.attempts, request.dispatched, request.refused].every((n) => Number.isSafeInteger(n) && n >= 0 && n <= 8) || request.dispatched > 1) problems.push("request");
+  if (request && request.attempts !== request.dispatched + request.refused) problems.push("request_counts");
   const outcome = receipt.outcome;
   const outcomeKeys = ["status", "httpStatus", "errorCode", "sideEffectState", "elapsedMs", "responseBytes"];
   if (!sameKeys(outcome, outcomeKeys) || !["ok", "failed"].includes(outcome.status) ||
@@ -145,10 +146,20 @@ export function validateProductReadReceipt(receipt, { forbiddenText = [] } = {})
       !Number.isSafeInteger(outcome.elapsedMs) || outcome.elapsedMs < 0 ||
       (outcome.responseBytes !== null && !(Number.isSafeInteger(outcome.responseBytes) && outcome.responseBytes >= 0)) ||
       (outcome.status === "ok") !== (outcome.errorCode === null)) problems.push("outcome");
+  // A successful decode needs an observed dispatched response, not merely
+  // individually well-formed counters and outcome fields. Failures may retain
+  // no response (timeout/network error) or oversized bytes that explain rejection.
+  if (outcome?.status === "ok" && (request?.dispatched !== 1 ||
+      !Number.isSafeInteger(outcome.httpStatus) || outcome.httpStatus < 200 || outcome.httpStatus > 299 ||
+      outcome.sideEffectState !== null || !Number.isSafeInteger(outcome.responseBytes) ||
+      outcome.responseBytes < 1 || outcome.responseBytes > MAX_RESPONSE_BYTES)) problems.push("success_without_valid_response");
+  if (request?.dispatched === 0 && (outcome?.httpStatus !== null || outcome?.responseBytes !== null)) problems.push("response_without_dispatch");
   const decoded = receipt.decoded;
   if (outcome?.status === "failed" ? decoded !== null : !validDecoded(decoded)) problems.push("decoded");
   const grant = receipt.trustedHostGrant;
-  if (!sameKeys(grant, ["verified", "expiresAt"]) || typeof grant.verified !== "boolean" || (grant.expiresAt !== null && !ISO_PATTERN.test(grant.expiresAt ?? ""))) problems.push("trustedHostGrant");
+  // Final receipts are written only after the preflight host grant succeeds;
+  // preflight refusals and in-flight crash markers use separate record shapes.
+  if (!sameKeys(grant, ["verified", "expiresAt"]) || grant.verified !== true || typeof grant.expiresAt !== "string" || !ISO_PATTERN.test(grant.expiresAt)) problems.push("trustedHostGrant");
   const expected = {
     decisionVerifier: "operator_attestation_only", keyPresence: "name_only_never_proof", accountAccess: "NOT_ASSERTED_ONLY_OBSERVED_BY_THIS_ONE_READ",
     accountTerms: "NOT_VERIFIED_BY_THIS_RECEIPT", builtArtifact: "LOADED_FROM_HASHED_BYTES_APPROVAL_IS_THE_TRUSTED_HOSTS_ONLY", requestCost: "UNKNOWN", authorityIssued: false, quoteAuthority: false, orderAuthority: false,
